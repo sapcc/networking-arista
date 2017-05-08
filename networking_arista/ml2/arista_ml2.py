@@ -410,7 +410,7 @@ class AristaRPCWrapperBase(object):
 
     @abc.abstractmethod
     def create_instance_bulk(self, tenant_id, neutron_ports, vms,
-                             bm_port_profiles, sync=False):
+                             port_profiles, sync=False):
         """Sends a bulk request to create ports.
 
         :param tenant_id: globaly unique neutron tenant identifier
@@ -855,7 +855,7 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
         return self._send_api_request(path, 'POST', data)
 
     def create_instance_bulk(self, tenant_id, neutron_ports, vms,
-                             bm_port_profiles, sync=False):
+                             port_profiles, sync=False):
         self._create_tenant_if_needed(tenant_id)
 
         vmInst = {}
@@ -867,25 +867,6 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
         portBindings = {}
 
         for vm in vms.values():
-            for v_port in vm['ports']:
-                port_id = v_port['portId']
-                if (port_id in neutron_ports and
-                    neutron_ports[port_id]['device_owner'].startswith(
-                        'baremetal')):
-                    vm['baremetal_instance'] = True
-
-            # Filter out all virtual ports, if instance type is baremetal
-            index = 0
-            for index, v_port in enumerate(vm['ports']):
-                port_id = v_port['portId']
-                if port_id in neutron_ports:
-                    device_owner = neutron_ports[port_id]['device_owner']
-                    if(device_owner.startswith('compute') and
-                       vm['baremetal_instance']):
-                        del vm['ports'][index]
-
-            # Now we are left with the ports that we are interested that
-            # require provisioning
             for v_port in vm['ports']:
                 port_id = v_port['portId']
                 if not v_port['hosts']:
@@ -901,18 +882,21 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
                 instance = self._create_instance_data(inst_id, inst_host)
 
                 device_owner = neutron_port['device_owner']
+                vnic_type = port_profiles[port_id]['vnic_type']
                 if device_owner == n_const.DEVICE_OWNER_DHCP:
                     instance_type = InstanceType.DHCP
                     if inst_id not in dhcpInst:
                         dhcpInst[inst_id] = instance
-                elif device_owner.startswith('compute'):
-                    instance_type = InstanceType.VM
-                    if inst_id not in vmInst:
-                        vmInst[inst_id] = instance
-                elif device_owner.startswith('baremetal'):
-                    instance_type = InstanceType.BAREMETAL
-                    if inst_id not in baremetalInst:
-                        baremetalInst[inst_id] = instance
+                elif (device_owner.startswith('compute') or
+                      device_owner.startswith('baremetal')):
+                    if vnic_type == 'baremetal':
+                        instance_type = InstanceType.BAREMETAL
+                        if inst_id not in baremetalInst:
+                            baremetalInst[inst_id] = instance
+                    else:
+                        instance_type = InstanceType.VM
+                        if inst_id not in vmInst:
+                            vmInst[inst_id] = instance
                 elif device_owner == n_const.DEVICE_OWNER_DVR_INTERFACE:
                     instance_type = InstanceType.ROUTER
                     if inst_id not in routerInst:
@@ -939,7 +923,7 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
                         port_id, inst_host, network_id,
                         networkSegments[port_id])
                 elif instance_type in InstanceType.BAREMETAL_INSTANCE_TYPES:
-                    switch_profile = json.loads(bm_port_profiles[
+                    switch_profile = json.loads(port_profiles[
                                                 port_id]['profile'])
                     portBinding = self._get_switch_bindings(
                         port_id, inst_host, network_id,
@@ -1007,10 +991,12 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
         device_type = ''
         if device_owner == n_const.DEVICE_OWNER_DHCP:
             device_type = InstanceType.DHCP
-        elif device_owner.startswith('compute'):
-            device_type = InstanceType.VM
-        elif device_owner.startswith('baremetal'):
-            device_type = InstanceType.BAREMETAL
+        elif (device_owner.startswith('compute')
+              or device_owner.startswith('baremetal')):
+            if vnic_type == 'baremetal':
+                device_type = InstanceType.BAREMETAL
+            else:
+                device_type = InstanceType.VM
         elif device_owner == n_const.DEVICE_OWNER_DVR_INTERFACE:
             device_type = InstanceType.ROUTER
         else:
@@ -1048,10 +1034,12 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
         device_type = ''
         if device_owner == n_const.DEVICE_OWNER_DHCP:
             device_type = InstanceType.DHCP
-        elif device_owner.startswith('compute'):
-            device_type = InstanceType.VM
-        elif device_owner.startswith('baremetal'):
-            device_type = InstanceType.BAREMETAL
+        elif (device_owner.startswith('compute') or
+              device_owner.startswith('baremetal')):
+            if vnic_type == 'baremetal':
+                device_type = InstanceType.BAREMETAL
+            else:
+                device_type = InstanceType.VM
         elif device_owner == n_const.DEVICE_OWNER_DVR_INTERFACE:
             device_type = InstanceType.ROUTER
         else:
@@ -1341,26 +1329,28 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                                              tenant_id,
                                              segments,
                                              port_name)
-        elif device_owner.startswith('compute'):
-            self.plug_host_into_network(device_id,
-                                        host_id,
-                                        port_id,
-                                        net_id,
-                                        tenant_id,
-                                        segments,
-                                        port_name)
-        elif device_owner.startswith('baremetal'):
-            self.plug_baremetal_into_network(device_id,
-                                             host_id,
-                                             port_id,
-                                             net_id,
-                                             tenant_id,
-                                             segments,
-                                             port_name,
-                                             sg, orig_sg,
-                                             vnic_type,
+        elif (device_owner.startswith('compute') or
+              device_owner.startswith('baremetal')):
+            if vnic_type == 'baremetal':
+                self.plug_baremetal_into_network(device_id,
+                                                 host_id,
+                                                 port_id,
+                                                 net_id,
+                                                 tenant_id,
+                                                 segments,
+                                                 port_name,
+                                                 sg, orig_sg,
+                                                 vnic_type,
                                              switch_bindings,
                                              vlan_type)
+            else:
+                self.plug_host_into_network(device_id,
+                                            host_id,
+                                            port_id,
+                                            net_id,
+                                            tenant_id,
+                                            segments,
+                                            port_name)
         elif device_owner == n_const.DEVICE_OWNER_DVR_INTERFACE:
             self.plug_distributed_router_port_into_network(device_id,
                                                            host_id,
@@ -1378,21 +1368,23 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                                                port_id,
                                                network_id,
                                                tenant_id)
-        elif device_owner.startswith('compute'):
-            self.unplug_host_from_network(device_id,
-                                          hostname,
-                                          port_id,
-                                          network_id,
-                                          tenant_id)
-        elif device_owner.startswith('baremetal'):
-            self.unplug_baremetal_from_network(device_id,
-                                               hostname,
-                                               port_id,
-                                               network_id,
-                                               tenant_id,
-                                               sg,
-                                               vnic_type,
-                                               switch_bindings)
+        elif (device_owner.startswith('compute') or
+              device_owner.startswith('baremetal')):
+            if vnic_type == 'baremetal':
+                self.unplug_baremetal_from_network(device_id,
+                                                   hostname,
+                                                   port_id,
+                                                   network_id,
+                                                   tenant_id,
+                                                   sg,
+                                                   vnic_type,
+                                                   switch_bindings)
+            else:
+                self.unplug_host_from_network(device_id,
+                                              hostname,
+                                              port_id,
+                                              network_id,
+                                              tenant_id)
         elif device_owner == n_const.DEVICE_OWNER_DVR_INTERFACE:
             self.unplug_distributed_router_port_from_network(device_id,
                                                              port_id,
@@ -1636,7 +1628,7 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
         self._run_openstack_cmds(cmds, sync=sync)
 
     def create_instance_bulk(self, tenant_id, neutron_ports, vms,
-                             bm_port_profiles, sync=False):
+                             port_profiles, sync=False):
         cmds = ['tenant %s' % tenant_id]
         # Create a reference to function to avoid name lookups in the loop
         append_cmd = cmds.append
@@ -1644,27 +1636,6 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
         for vm in vms.values():
             counter += 1
 
-            # Mark an instance as baremetal if any of the ports is baremetal
-            for v_port in vm['ports']:
-                port_id = v_port['portId']
-                if (port_id in neutron_ports and
-                    neutron_ports[port_id]['device_owner'].startswith(
-                        'baremetal')):
-                    vm['baremetal_instance'] = True
-
-            # Filter out all virtual ports, if instance type is baremetal
-            index = 0
-            for v_port in vm['ports']:
-                port_id = v_port['portId']
-                if port_id in neutron_ports:
-                    device_owner = neutron_ports[port_id]['device_owner']
-                    if(device_owner.startswith('compute') and
-                       vm['baremetal_instance']):
-                        del vm['ports'][index]
-                index += 1
-
-            # Now we are left with the ports that we are interested that
-            # require provisioning
             for v_port in vm['ports']:
                 port_id = v_port['portId']
                 if not v_port['hosts']:
@@ -1680,6 +1651,7 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                     port_name = 'name "%s"' % neutron_port['name']
 
                 device_owner = neutron_port['device_owner']
+                vnic_type = port_profiles[port_id]['vnic_type']
                 network_id = neutron_port['network_id']
                 segments = []
 
@@ -1697,17 +1669,18 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                     cmds.extend('segment level %d id %s' % (
                         segment.level, segment.segment_id)
                         for segment in segments)
-
-                elif device_owner.startswith('baremetal'):
-                    append_cmd('instance id %s hostid %s type baremetal' %
-                               (vm['vmId'], v_port['hosts'][0]))
-                    profile = bm_port_profiles[neutron_port['id']]
-                    profile = json.loads(profile['profile'])
-                    vlan_type = profile.get('vlan_type', 'native')
-                    for binding in profile.get('local_link_information', []):
-                        if not binding or not isinstance(profile, dict):
-                            # skip all empty entries
-                            continue
+                elif (device_owner.startswith('compute') or
+                      device_owner.startswith('baremetal')):
+                    if vnic_type == 'baremetal':
+                        append_cmd('instance id %s hostid %s type baremetal' %
+                                   (vm['vmId'], v_port['hosts'][0]))
+                        profile = port_profiles[neutron_port['id']]
+                        profile = json.loads(profile['profile'])
+                        vlan_type = profile.get('vlan_type', 'native')
+                        for binding in profile.get('local_link_information', []):
+                            if not binding or not isinstance(profile, dict):
+                                # skip all empty entries
+                                continue
                         # Ensure that profile contains switch and port ID info
                         if binding['switch_id'] and binding['port_id']:
                             if port_name:
@@ -1729,15 +1702,15 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                                 for segment in segments)
 
 
-                elif device_owner.startswith('compute'):
-                    append_cmd('vm id %s hostid %s' % (vm['vmId'],
-                                                       v_port['hosts'][0]))
-                    append_cmd('port id %s %s network-id %s' %
-                               (neutron_port['id'], port_name,
-                                neutron_port['network_id']))
-                    cmds.extend('segment level %d id %s' % (level,
-                                segment['id'])
-                                for level, segment in enumerate(segments))
+                    else:
+                        append_cmd('vm id %s hostid %s' % (vm['vmId'],
+                                                           v_port['hosts'][0]))
+                        append_cmd('port id %s %s network-id %s' %
+                                   (neutron_port['id'], port_name,
+                                    neutron_port['network_id']))
+                        cmds.extend('segment level %d id %s' % (segment.level,
+                                                                segment.segment_id)
+                                    for segment in segments)
                 elif device_owner == n_const.DEVICE_OWNER_DVR_INTERFACE:
                     if not self.bm_and_dvr_supported():
                         LOG.info(ERR_DVR_NOT_SUPPORTED)
@@ -1748,9 +1721,9 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                         append_cmd('port id %s network-id %s hostid %s' % (
                                    neutron_port['id'],
                                    neutron_port['network_id'], host))
-                        cmds.extend('segment level %d id %s' % (level,
-                                    segment['id'])
-                                    for level, segment in enumerate(segments))
+                        cmds.extend('segment level %d id %s' % (segment.level,
+                                    segment.segment_id)
+                                    for segment in segments)
                 else:
                     LOG.warning(_LW("Unknown device owner: %s"),
                                 neutron_port['device_owner'])
@@ -2111,7 +2084,7 @@ class SyncService(object):
         )
 
         # Get Baremetal port switch_bindings, if any
-        bm_port_profiles = db_lib.get_all_baremetal_ports()
+        port_profiles = db_lib.get_all_portbindings()
         # To support shared networks, split the sync loop in two parts:
         # In first loop, delete unwanted VM and networks and update networks
         # In second loop, update VMs. This is done to ensure that networks for
@@ -2198,23 +2171,26 @@ class SyncService(object):
                 LOG.warning(EOS_UNREACHABLE_MSG)
                 self._force_sync = True
 
-        ports_of_interest = {}
-        for port in self._ndb.get_all_ports():
-            ports_of_interest.update(
-                self._port_dict_representation(port))
-
         # Now update the VMs
         for tenant in instances_to_update:
             if not instances_to_update[tenant]:
                 continue
             try:
-                db_vms = db_lib.get_vms(tenant)
-                if db_vms:
-                    self._rpc.create_instance_bulk(tenant,
-                                                   ports_of_interest,
-                                                   db_vms,
-                                                   bm_port_profiles,
-                                                   sync=True)
+                # Filter the ports to only the vms that we are interested
+                # in.
+                ports_of_interest = {}
+                for port in self._ndb.get_all_ports_for_tenant(tenant):
+                    ports_of_interest.update(
+                        self._port_dict_representation(port))
+
+                if ports_of_interest:
+                    db_vms = db_lib.get_vms(tenant)
+                    if db_vms:
+                        self._rpc.create_instance_bulk(tenant,
+                                                       ports_of_interest,
+                                                       db_vms,
+                                                       port_profiles,
+                                                       sync=True)
             except arista_exc.AristaRpcError:
                 LOG.warning(EOS_UNREACHABLE_MSG)
                 self._force_sync = True

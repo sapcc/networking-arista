@@ -910,8 +910,7 @@ class AristaDriver(driver_api.MechanismDriver):
         # second last driver in the bound drivers list.
         if (segment_id and bound_drivers[-2:-1] == [MECHANISM_DRV_NAME]):
             filters = {'segment_id': segment_id}
-            result = db_lib.get_port_binding_level(
-                context._plugin_context.session, filters)
+            result = db_lib.get_port_binding_level(filters)
             LOG.debug("Looking for entry with filters=%(filters)s "
                       "result=%(result)s ", {'filters': filters,
                                              'result': result})

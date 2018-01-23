@@ -436,11 +436,25 @@ def get_all_baremetal_ports():
                 for bm_port in bm_ports}
 
 
-def get_port_binding_level(session, filters):
+def get_port_binding_level(filters):
     """Returns entries from PortBindingLevel based on the specified filters."""
+    session = db.get_session()
     with session.begin():
         return (session.query(ml2_models.PortBindingLevel).
-                filter_by(**filters).all())
+                filter_by(**filters).
+                order_by(ml2_models.PortBindingLevel.level).
+                all())
+
+def get_network_segments_by_port_id(port_id):
+    session = db.get_session()
+    with session.begin():
+        segments = (session.query(ml2_models.NetworkSegment,
+                                  ml2_models.PortBindingLevel).
+                    join(ml2_models.PortBindingLevel).
+                    filter_by(port_id=port_id).
+                    order_by(ml2_models.PortBindingLevel.level).
+                    all())
+        return [segment[0] for segment in segments]
 
 
 class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,

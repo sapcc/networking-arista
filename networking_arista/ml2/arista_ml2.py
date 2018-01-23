@@ -955,10 +955,10 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
                     continue
 
                 network_id = neutron_port['network_id']
-                if network_id not in networkSegments:
-                    networkSegments[
-                        network_id] = self._ndb.get_all_network_segments(
-                            network_id)
+
+                if port_id not in networkSegments:
+                    networkSegments[port_id] = (
+                        db_lib.get_network_segments_by_port_id(port_id))
 
                 port = self._create_port_data(port_id, tenant_id,
                                               network_id, inst_id,
@@ -969,14 +969,14 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
                 if instance_type in InstanceType.VIRTUAL_INSTANCE_TYPES:
                     portBinding = self._get_host_bindings(
                         port_id, inst_host, network_id,
-                        networkSegments[network_id])
+                        networkSegments[port_id])
                 elif instance_type in InstanceType.BAREMETAL_INSTANCE_TYPES:
                     switch_profile = json.loads(bm_port_profiles[
                                                 port_id]['profile'])
                     portBinding = self._get_switch_bindings(
                         port_id, inst_host, network_id,
                         switch_profile.get('local_link_information', []),
-                        networkSegments[network_id])
+                        networkSegments[port_id])
                 if port_id not in portBindings:
                     portBindings[port_id] = portBinding
                 else:
@@ -1715,15 +1715,21 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                 network_id = neutron_port['network_id']
                 segments = []
                 if self.hpb_supported():
-                    segments = self._ndb.get_all_network_segments(network_id)
+                    if (self.hpb_supported() and
+                            device_owner != n_const.DEVICE_OWNER_DVR_INTERFACE):
+                        filters = {'port_id': port_id,
+                                   'host': v_port['hosts'][0]}
+                        segments = db_lib.get_port_binding_level(filters)
+
                 if device_owner == n_const.DEVICE_OWNER_DHCP:
                     append_cmd('network id %s' % neutron_port['network_id'])
                     append_cmd('dhcp id %s hostid %s port-id %s %s' %
                                (vm['vmId'], v_port['hosts'][0],
                                 neutron_port['id'], port_name))
-                    cmds.extend(
-                        'segment level %d id %s' % (level, segment['id'])
-                        for level, segment in enumerate(segments))
+                    cmds.extend('segment level %d id %s' % (
+                        segment.level, segment.segment_id)
+                        for segment in segments)
+
                 elif device_owner.startswith('baremetal'):
                     append_cmd('instance id %s hostid %s type baremetal' %
                                (vm['vmId'], v_port['hosts'][0]))
@@ -1751,8 +1757,9 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                                              binding['switch_id'],
                                              binding['port_id']))
                             cmds.extend('segment level %d id %s' % (
-                                level, segment['id'])
-                                for level, segment in enumerate(segments))
+                                segment.level, segment.segment_id)
+                                for segment in segments)
+
 
                 elif device_owner.startswith('compute'):
                     append_cmd('vm id %s hostid %s' % (vm['vmId'],

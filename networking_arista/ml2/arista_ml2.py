@@ -1714,12 +1714,12 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                 device_owner = neutron_port['device_owner']
                 network_id = neutron_port['network_id']
                 segments = []
-                if self.hpb_supported():
-                    if (self.hpb_supported() and
-                            device_owner != n_const.DEVICE_OWNER_DVR_INTERFACE):
-                        filters = {'port_id': port_id,
-                                   'host': v_port['hosts'][0]}
-                        segments = db_lib.get_port_binding_level(filters)
+
+                if (self.hpb_supported() and
+                        device_owner != n_const.DEVICE_OWNER_DVR_INTERFACE):
+                    filters = {'port_id': port_id,
+                               'host': v_port['hosts'][0]}
+                    segments = db_lib.get_port_binding_level(filters)
 
                 if device_owner == n_const.DEVICE_OWNER_DHCP:
                     append_cmd('network id %s' % neutron_port['network_id'])

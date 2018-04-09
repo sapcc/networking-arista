@@ -12,9 +12,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import six
+import ssl
+import collections
 import json
-
 import jsonrpclib
+from netaddr import EUI
+
+from urllib import quote as urlquote
 from oslo_config import cfg
 from oslo_log import log as logging
 
@@ -82,27 +87,33 @@ class AristaSecGroupSwitchDriver(object):
     def __init__(self, neutron_db):
         self._ndb = neutron_db
         self._servers = []
-        self._hosts = {}
+        self._server_by_id = dict()
         self.sg_enabled = cfg.CONF.ml2_arista.get('sec_group_support')
         self._validate_config()
         for s in cfg.CONF.ml2_arista.switch_info:
             switch_ip, switch_user, switch_pass = s.split(":")
             if switch_pass == "''":
                 switch_pass = ''
-            self._hosts[switch_ip] = (
-                {'user': switch_user, 'password': switch_pass})
-            self._servers.append(jsonrpclib.Server(
-                self._eapi_host_url(switch_ip)))
+            eapi_server_url = ('https://%s:%s@%s/command-api' %
+                               (switch_user, urlquote(switch_pass), switch_ip))
+            transport = jsonrpclib.jsonrpc.SafeTransport()
+            # TODO: Make that a configuration value
+            if hasattr(ssl, '_create_unverified_context'):
+                transport.context = ssl._create_unverified_context()
+            server = jsonrpclib.Server(eapi_server_url, transport=transport)
+
+            ret = server.runCmds(version=1, cmds=["show lldp local-info management 1"])
+            system_id = EUI(ret[0]['chassisId'])
+            self._server_by_id[system_id] = server
+            self._server_by_id[switch_ip] = server
+            self._servers.append(server)
+
         self.aclCreateDict = acl_cmd['acl']
         self.aclApplyDict = acl_cmd['apply']
 
-    def _eapi_host_url(self, host):
-        user = self._hosts[host]['user']
-        pwd = self._hosts[host]['password']
-
-        eapi_server_url = ('https://%s:%s@%s/command-api' %
-                           (user, pwd, host))
-        return eapi_server_url
+    def _get_server(self, switch_info, switch_id):
+        return self._server_by_id.get(switch_info) \
+               or self._server_by_id.get(EUI(switch_id))
 
     def _validate_config(self):
         if not self.sg_enabled:
@@ -398,9 +409,7 @@ class AristaSecGroupSwitchDriver(object):
 
         for s in self._servers:
             try:
-                self._run_openstack_sg_cmds(in_cmds, s)
-                self._run_openstack_sg_cmds(out_cmds, s)
-
+                self._run_openstack_sg_cmds(in_cmds + out_cmds, s)
             except Exception:
                 msg = (_('Failed to create ACL on EOS %s') % s)
                 LOG.exception(msg)
@@ -431,7 +440,7 @@ class AristaSecGroupSwitchDriver(object):
                     LOG.exception(msg)
                     raise arista_exc.AristaSecurityGroupError(msg=msg)
 
-    def apply_acl(self, sgs, switch_id, port_id, switch_info):
+    def apply_acl(self, sgs, switch_id=None, port_id=None, switch_info=None, server=None):
         """Creates an ACL on Arista Switch.
 
         Applies ACLs to the baremetal ports only. The port/switch
@@ -441,6 +450,7 @@ class AristaSecGroupSwitchDriver(object):
         param switch_id: Switch ID of TOR where ACL needs to be applied
         param port_id: Port ID of port where ACL needs to be applied
         param switch_info: IP address of the TOR
+        param server: Reference to the RPC Server for the switch
         """
         # Do nothing if Security Groups are not enabled
         if not self.sg_enabled:
@@ -458,11 +468,13 @@ class AristaSecGroupSwitchDriver(object):
         # Ingress ACL, egress ACL or both
         direction = ['ingress', 'egress']
 
-        server = jsonrpclib.Server(self._eapi_host_url(switch_info))
-        for d in range(len(direction)):
-            name = self._arista_acl_name(sg['id'], direction[d])
+        if server is None:
+            server = self._get_server(switch_info, switch_id)
+
+        for dir in direction:
+            name = self._arista_acl_name(sg['id'], dir)
             try:
-                self._apply_acl_on_eos(port_id, name, direction[d], server)
+                self._apply_acl_on_eos(port_id, name, dir, server)
             except Exception:
                 msg = (_('Failed to apply ACL on port %s') % port_id)
                 LOG.exception(msg)
@@ -501,14 +513,11 @@ class AristaSecGroupSwitchDriver(object):
             if sgr['direction'] not in direction:
                 direction.append(sgr['direction'])
 
-        # THIS IS TOTAL HACK NOW - just for testing
-        # Assumes the credential of all switches are same as specified
-        # in the condig file
-        server = jsonrpclib.Server(self._eapi_host_url(switch_info))
-        for d in range(len(direction)):
-            name = self._arista_acl_name(sg['id'], direction[d])
+        server = self._get_server(switch_info, switch_id)
+        for dir in direction:
+            name = self._arista_acl_name(sg['id'], dir)
             try:
-                self._remove_acl_from_eos(port_id, name, direction[d], server)
+                self._remove_acl_from_eos(port_id, name, dir, server)
             except Exception:
                 msg = (_('Failed to remove ACL on port %s') % port_id)
                 LOG.exception(msg)
@@ -528,13 +537,13 @@ class AristaSecGroupSwitchDriver(object):
         command_end = ['exit']
         full_command = command_start + commands + command_end
 
-        LOG.info(_LI('Executing command on Arista EOS: %s'), full_command)
+        LOG.debug(_LI('Executing command on Arista EOS: %s'), full_command)
 
         try:
             # this returns array of return values for every command in
             # full_command list
             ret = server.runCmds(version=1, cmds=full_command)
-            LOG.info(_LI('Results of execution on Arista EOS: %s'), ret)
+            LOG.debug(_LI('Results of execution on Arista EOS: %s'), ret)
 
         except Exception:
             msg = (_('Error occurred while trying to execute '
@@ -547,7 +556,7 @@ class AristaSecGroupSwitchDriver(object):
         """Generate an arista specific name for this ACL.
 
         Use a unique name so that OpenStack created ACLs
-        can be distinguishged from the user created ACLs
+        can be distinguished from the user created ACLs
         on Arista HW.
         """
         in_out = 'IN'
@@ -567,36 +576,38 @@ class AristaSecGroupSwitchDriver(object):
             return
 
         arista_ports = db_lib.get_ports()
-        neutron_sgs = self._ndb.get_security_groups()
-        sg_bindings = self._ndb.get_all_security_gp_to_port_bindings()
-        sgs = []
-        sgs_dict = {}
         arista_port_ids = arista_ports.keys()
+        sg_bindings = self._ndb.get_all_security_gp_to_port_bindings(filters={'port_id': arista_port_ids})
+        all_sgs = set(binding['security_group_id'] for binding in sg_bindings)
+        neutron_sgs = self._ndb.get_security_groups(filters={'id': all_sgs})
+        sgs_dict = collections.defaultdict(list)
 
         # Get the list of Security Groups of interest to us
         for s in sg_bindings:
-            if s['port_id'] in arista_port_ids:
-                if not s['security_group_id'] in sgs:
-                    sgs_dict[s['port_id']] = (
-                        {'security_group_id': s['security_group_id']})
-                    sgs.append(s['security_group_id'])
+            sgs_dict[s['port_id']].append(s['security_group_id'])
 
         # Create the ACLs on Arista Switches
-        for idx in range(len(sgs)):
-            self.create_acl(neutron_sgs[sgs[idx]])
+        for sg_id in all_sgs:
+            self.create_acl(neutron_sgs[sg_id])
 
         # Get Baremetal port profiles, if any
-        bm_port_profiles = db_lib.get_all_baremetal_ports()
+        ports_by_switch = collections.defaultdict(list)
+        for bm in six.itervalues(db_lib.get_all_baremetal_ports()):
+            sgs = sgs_dict.get(bm['port_id'])
+            if sgs is not None:
+                profile = json.loads(bm['profile'])
+                link_info = profile['local_link_information']
+                for l in link_info:
+                    if not l:
+                        # skip all empty entries
+                        continue
+                    ports_by_switch[l.get('switch_info'), l.get('switch_id')].append((sgs, l['port_id']))
 
-        if bm_port_profiles:
-            for bm in bm_port_profiles.values():
-                if bm['port_id'] in sgs_dict:
-                    sg = sgs_dict[bm['port_id']]['security_group_id']
-                    profile = json.loads(bm['profile'])
-                    link_info = profile['local_link_information']
-                    for l in link_info:
-                        if not l:
-                            # skip all empty entries
-                            continue
-                        self.apply_acl([sg], l['switch_id'],
-                                       l['port_id'], l['switch_info'])
+        for (switch_info, switch_id), ports in six.iteritems(ports_by_switch):
+            server = self._get_server(switch_info, switch_id)
+            if server is None:
+                continue
+
+            for sgs, port_id in ports:
+                self.apply_acl(sgs, server=server, port_id=port_id)
+

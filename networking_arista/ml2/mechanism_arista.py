@@ -16,6 +16,7 @@
 import threading
 
 from oslo_config import cfg
+from oslo_service import loopingcall
 from oslo_log import log as logging
 
 from neutron.common import constants as n_const
@@ -46,10 +47,11 @@ MECHANISM_DRV_NAME = 'arista'
 
 
 def pretty_log(tag, obj):
-    import json
-    log_data = json.dumps(obj, sort_keys=True, indent=4)
-    LOG.debug(tag)
-    LOG.debug(log_data)
+    # import json
+    # log_data = json.dumps(obj, sort_keys=True, indent=4)
+    # LOG.debug(tag)
+    # LOG.debug(log_data)
+    pass
 
 
 class AristaDriver(driver_api.MechanismDriver):
@@ -68,7 +70,7 @@ class AristaDriver(driver_api.MechanismDriver):
 
         confg = cfg.CONF.ml2_arista
         self.segmentation_type = db_lib.VLAN_SEGMENTATION
-        self.timer = None
+        self.timer = loopingcall.FixedIntervalLoopingCall(self._synchronization_thread)
         self.sync_timeout = confg['sync_interval']
         self.managed_physnets = confg['managed_physnets']
         self.eos_sync_lock = threading.Lock()
@@ -95,6 +97,7 @@ class AristaDriver(driver_api.MechanismDriver):
 
         self.sync_service = arista_ml2.SyncService(self.rpc, self.ndb)
         self.rpc.sync_service = self.sync_service
+        self.sg_handler = None
 
     def initialize(self):
         if self.rpc.check_cvx_availability():
@@ -105,8 +108,8 @@ class AristaDriver(driver_api.MechanismDriver):
         # Registering with EOS updates self.rpc.region_updated_time. Clear it
         # to force an initial sync
         self.rpc.clear_region_updated_time()
-        self._synchronization_thread()
         self.sg_handler = sec_group_callback.AristaSecurityGroupHandler(self)
+        self.timer.start(self.sync_timeout, stop_on_exception=False)
 
     def create_network_precommit(self, context):
         """Remember the tenant, and network information."""
@@ -653,8 +656,8 @@ class AristaDriver(driver_api.MechanismDriver):
         sg = port['security_groups']
         orig_sg = orig_port['security_groups']
 
-        pretty_log("update_port_postcommit: new", port)
-        pretty_log("update_port_postcommit: orig", orig_port)
+        # pretty_log("update_port_postcommit: new", port)
+        # pretty_log("update_port_postcommit: orig", orig_port)
 
         # Check if it is port migration case
         if self._handle_port_migration_postcommit(context):
@@ -946,13 +949,9 @@ class AristaDriver(driver_api.MechanismDriver):
         with self.eos_sync_lock:
             self.sync_service.do_synchronize()
 
-        self.timer = threading.Timer(self.sync_timeout,
-                                     self._synchronization_thread)
-        self.timer.start()
-
     def stop_synchronization_thread(self):
         if self.timer:
-            self.timer.cancel()
+            self.timer.stop()
             self.timer = None
 
     def _cleanup_db(self):

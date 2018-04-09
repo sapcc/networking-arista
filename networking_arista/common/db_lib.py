@@ -429,8 +429,8 @@ def get_all_baremetal_ports():
     """Returns a list of all ports that belong to baremetal hosts."""
     session = db.get_session()
     with session.begin():
-        querry = session.query(ml2_models.PortBinding)
-        bm_ports = querry.filter_by(vnic_type='baremetal').all()
+        query = session.query(ml2_models.PortBinding)
+        bm_ports = query.filter_by(vnic_type='baremetal', vif_type='other').all()
 
         return {bm_port.port_id: _make_bm_port_dict(bm_port)
                 for bm_port in bm_ports}
@@ -567,9 +567,9 @@ class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,
         return super(NeutronNets,
                      self).get_port(self.admin_ctx, port_id) or {}
 
-    def get_all_security_gp_to_port_bindings(self):
+    def get_all_security_gp_to_port_bindings(self, filters=None):
         return super(NeutronNets, self)._get_port_security_group_bindings(
-            self.admin_ctx) or []
+            self.admin_ctx, filters=filters) or []
 
     def get_security_gp_to_port_bindings(self, sec_gp_id):
         filters = {'security_group_id': [sec_gp_id]}
@@ -580,9 +580,9 @@ class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,
         return super(NeutronNets,
                      self).get_security_group(self.admin_ctx, sec_gp_id) or []
 
-    def get_security_groups(self):
+    def get_security_groups(self, filters=None):
         sgs = super(NeutronNets,
-                    self).get_security_groups(self.admin_ctx) or []
+                    self).get_security_groups(self.admin_ctx, filters=filters) or []
         sgs_all = {}
         if sgs:
             for s in sgs:

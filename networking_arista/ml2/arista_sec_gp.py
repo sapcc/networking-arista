@@ -32,7 +32,7 @@ LOG = logging.getLogger(__name__)
 EOS_UNREACHABLE_MSG = _('Unable to reach EOS')
 
 # Note 'None,null' means default rule - i.e. deny everything
-SUPPORTED_SG_PROTOCOLS = [None, 'tcp', 'udp', 'icmp']
+SUPPORTED_SG_PROTOCOLS = ['tcp', 'udp', 'icmp', None]
 
 acl_cmd = {
     'acl': {'create': ['ip access-list {0}'],
@@ -163,11 +163,13 @@ class AristaSecGroupSwitchDriver(object):
             return in_cmds, out_cmds
         else:
             # Non ICMP rules processing here
-            acl_dict = self.aclCreateDict['in_rule']
-            cmds = in_cmds
             if direction == 'egress':
                 acl_dict = self.aclCreateDict['out_rule']
                 cmds = out_cmds
+            else:
+                acl_dict = self.aclCreateDict['in_rule']
+                cmds = in_cmds
+
             if not protocol:
                 acl_dict = self.aclCreateDict['default']
 
@@ -287,21 +289,28 @@ class AristaSecGroupSwitchDriver(object):
         if not sgr or sgr['protocol'] not in SUPPORTED_SG_PROTOCOLS:
             return in_cmds, out_cmds
 
+        if sgr['protocol'] is None:
+            protocols = SUPPORTED_SG_PROTOCOLS[:-1]
+        else:
+            protocols = [sgr['protocol']]
+
         remote_ip = sgr['remote_ip_prefix']
         if not remote_ip:
             remote_ip = 'any'
         min_port = sgr['port_range_min']
         if not min_port:
             min_port = 0
-        max_port = sgr['port_range_max']
-        if not max_port and sgr['protocol'] != 'icmp':
-            max_port = 65535
-        in_cmds, out_cmds = self._create_acl_on_eos(in_cmds, out_cmds,
-                                                    sgr['protocol'],
-                                                    remote_ip,
-                                                    min_port,
-                                                    max_port,
-                                                    sgr['direction'])
+
+        for protocol in protocols:
+            max_port = sgr['port_range_max']
+            if not max_port and protocol != 'icmp':
+                max_port = 65535
+            in_cmds, out_cmds = self._create_acl_on_eos(in_cmds, out_cmds,
+                                                        protocol,
+                                                        remote_ip,
+                                                        min_port,
+                                                        max_port,
+                                                        sgr['direction'])
         return in_cmds, out_cmds
 
     def create_acl_rule(self, sgr):

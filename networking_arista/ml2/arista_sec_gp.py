@@ -32,12 +32,17 @@ LOG = logging.getLogger(__name__)
 EOS_UNREACHABLE_MSG = _('Unable to reach EOS')
 
 # Note 'None,null' means default rule - i.e. deny everything
-SUPPORTED_SG_PROTOCOLS = ['tcp', 'udp', 'icmp', None]
+SUPPORTED_SG_PROTOCOLS = ['tcp', 'udp', 'icmp', 'dhcp', None]
 
-acl_cmd = {
-    'acl': {'create': ['ip access-list {0}'],
+DIRECTIONS = ['ingress', 'egress']
+
+acl_cmd = { # 0: protocol, 1: cidr, 2: from_port, 3: to_port
+    'acl': {'create': ['ip access-list {0}',
+                       '5 permit tcp any any established'],
             'in_rule': ['permit {0} {1} any range {2} {3}'],
-            'out_rule': ['permit {0} any {1} range {2} {3}'],
+            'out_rule': ['permit {0} any range 32768 65535 {1} range {2} {3}'],
+            'in_dhcp_rule': ['permit udp {1} eq {2} any eq {3}'],
+            'out_dhcp_rule': ['permit udp any eq {3} {1} eq {2}'],
             'in_icmp_custom1': ['permit icmp {0} any {1}'],
             'out_icmp_custom1': ['permit icmp any {0} {1}'],
             'in_icmp_custom2': ['permit icmp {0} any {1} {2}'],
@@ -149,7 +154,7 @@ class AristaSecGroupSwitchDriver(object):
             final_rule = rule_type + '_' + rule
             acl_dict = self.aclCreateDict[final_rule]
 
-            # None port is probematic - should be replaced with 0
+            # None port is problematic - should be replaced with 0
             if not from_port:
                 from_port = 0
             if not to_port:
@@ -160,6 +165,16 @@ class AristaSecGroupSwitchDriver(object):
                     cmds.append(c.format(cidr, from_port, to_port))
                 else:
                     cmds.append(c.format(cidr, from_port))
+            return in_cmds, out_cmds
+        elif protocol == 'dhcp':
+            # Not really a layer2 protocol
+
+            for c in self.aclCreateDict['in_dhcp_rule']:
+                in_cmds.append(c.format(protocol, cidr, from_port, to_port))
+
+            for c in self.aclCreateDict['out_dhcp_rule']:
+                out_cmds.append(c.format(protocol, cidr, from_port, to_port))
+
             return in_cmds, out_cmds
         else:
             # Non ICMP rules processing here
@@ -279,7 +294,7 @@ class AristaSecGroupSwitchDriver(object):
 
         self._run_openstack_sg_cmds(cmds, server)
 
-    def _create_acl_rule(self, in_cmds, out_cmds, sgr):
+    def _create_acl_rule(self, in_cmds, out_cmds, sgr, security_group_ips=None):
         """Creates an ACL on Arista Switch.
 
         For a given Security Group (ACL), it adds additional rule
@@ -290,27 +305,42 @@ class AristaSecGroupSwitchDriver(object):
             return in_cmds, out_cmds
 
         if sgr['protocol'] is None:
-            protocols = SUPPORTED_SG_PROTOCOLS[:-1]
+            protocols = SUPPORTED_SG_PROTOCOLS[0:3]
         else:
             protocols = [sgr['protocol']]
 
-        remote_ip = sgr['remote_ip_prefix']
-        if not remote_ip:
-            remote_ip = 'any'
+        remote_ips = None
+        remote_ip_prefix = sgr['remote_ip_prefix']
+        remote_group_id = sgr['remote_group_id']
+
+        if remote_ip_prefix:
+            remote_ips = [remote_ip_prefix]
+        elif remote_group_id:
+            security_group_ips = security_group_ips or {}
+            if remote_group_id not in security_group_ips:
+                fetched = self._ndb._select_ips_for_remote_group(self._ndb.admin_ctx, [remote_group_id])
+                security_group_ips.update(fetched)
+
+            remote_ips = security_group_ips[remote_group_id]
+
+        if remote_ips is None:
+            remote_ips = ['any']
+
         min_port = sgr['port_range_min']
         if not min_port:
             min_port = 0
 
-        for protocol in protocols:
-            max_port = sgr['port_range_max']
-            if not max_port and protocol != 'icmp':
-                max_port = 65535
-            in_cmds, out_cmds = self._create_acl_on_eos(in_cmds, out_cmds,
-                                                        protocol,
-                                                        remote_ip,
-                                                        min_port,
-                                                        max_port,
-                                                        sgr['direction'])
+        for remote_ip in remote_ips:
+            for protocol in protocols:
+                max_port = sgr['port_range_max']
+                if not max_port and protocol != 'icmp':
+                    max_port = 65535
+                in_cmds, out_cmds = self._create_acl_on_eos(in_cmds, out_cmds,
+                                                            protocol,
+                                                            remote_ip,
+                                                            min_port,
+                                                            max_port,
+                                                            sgr['direction'])
         return in_cmds, out_cmds
 
     def create_acl_rule(self, sgr):
@@ -347,7 +377,7 @@ class AristaSecGroupSwitchDriver(object):
     def delete_acl_rule(self, sgr):
         """Deletes an ACL rule on Arista Switch.
 
-        For a given Security Group (ACL), it adds removes a rule
+        For a given Security Group (ACL), it removes a rule
         Deals with multiple configurations - such as multiple switches
         """
         # Do nothing if Security Groups are not enabled
@@ -358,6 +388,11 @@ class AristaSecGroupSwitchDriver(object):
         if not sgr or sgr['protocol'] not in SUPPORTED_SG_PROTOCOLS:
             return
 
+        if sgr['protocol'] is None:
+            protocols = SUPPORTED_SG_PROTOCOLS[:-1]
+        else:
+            protocols = [sgr['protocol']]
+
         # Build seperate ACL for ingress and egress
         name = self._arista_acl_name(sgr['security_group_id'],
                                      sgr['direction'])
@@ -367,22 +402,24 @@ class AristaSecGroupSwitchDriver(object):
         min_port = sgr['port_range_min']
         if not min_port:
             min_port = 0
-        max_port = sgr['port_range_max']
-        if not max_port and sgr['protocol'] != 'icmp':
-            max_port = 65535
-        for s in six.itervalues(self._server_by_id):
-            try:
-                self._delete_acl_rule_from_eos(name,
-                                               sgr['protocol'],
-                                               remote_ip,
-                                               min_port,
-                                               max_port,
-                                               sgr['direction'],
-                                               s)
-            except Exception:
-                msg = (_('Failed to delete ACL on EOS %s') % s)
-                LOG.exception(msg)
-                raise arista_exc.AristaSecurityGroupError(msg=msg)
+
+        for protocol in protocols:
+            max_port = sgr['port_range_max']
+            if not max_port and protocol != 'icmp':
+                max_port = 65535
+            for s in six.itervalues(self._server_by_id):
+                try:
+                    self._delete_acl_rule_from_eos(name,
+                                                   sgr['protocol'],
+                                                   remote_ip,
+                                                   min_port,
+                                                   max_port,
+                                                   sgr['direction'],
+                                                   s)
+                except Exception:
+                    msg = (_('Failed to delete ACL on EOS %s') % s)
+                    LOG.exception(msg)
+                    raise arista_exc.AristaSecurityGroupError(msg=msg)
 
     def _create_acl_shell(self, sg_id):
         """Creates an ACL on Arista Switch.
@@ -391,15 +428,14 @@ class AristaSecGroupSwitchDriver(object):
         Deals with multiple configurations - such as multiple switches
         """
         # Build separate ACL for ingress and egress
-        direction = ['ingress', 'egress']
         cmds = ([], [])
-        for i, d in enumerate(direction):
+        for i, d in enumerate(DIRECTIONS):
             name = self._arista_acl_name(sg_id, d)
             for c in self.aclCreateDict['create']:
                 cmds[i].append(c.format(name))
         return cmds
 
-    def create_acl(self, sg, accumulator=None):
+    def create_acl(self, sg, accumulator=None, security_group_ips=None):
         """Creates an ACL on Arista Switch.
 
         Deals with multiple configurations - such as multiple switches
@@ -409,8 +445,17 @@ class AristaSecGroupSwitchDriver(object):
             return
 
         in_cmds, out_cmds = self._create_acl_shell(sg['id'])
-        for sgr in sg['security_group_rules']:
-            in_cmds, out_cmds = self._create_acl_rule(in_cmds, out_cmds, sgr)
+        security_group_rules = sg['security_group_rules']
+        security_group_rules.append({'protocol': 'dhcp',
+                                     'remote_ip_prefix': None,
+                                     'remote_group_id': None,
+                                     'port_range_min': 67,
+                                     'port_range_max': 68,
+                                     'direction': 'both'
+                                     })
+
+        for sgr in security_group_rules:
+            in_cmds, out_cmds = self._create_acl_rule(in_cmds, out_cmds, sgr, security_group_ips=security_group_ips)
         in_cmds.append('exit')
         out_cmds.append('exit')
 
@@ -439,8 +484,7 @@ class AristaSecGroupSwitchDriver(object):
             msg = _('Invalid or Empty Security Group Specified')
             raise arista_exc.AristaSecurityGroupError(msg=msg)
 
-        direction = ['ingress', 'egress']
-        for i, d in enumerate(direction):
+        for i, d in enumerate(DIRECTIONS):
             name = self._arista_acl_name(sg['id'], d)
 
             for s in six.itervalues(self._server_by_id):
@@ -473,9 +517,7 @@ class AristaSecGroupSwitchDriver(object):
         # We already have ACLs on the TORs.
         # Here we need to find out which ACL is applicable - i.e.
         # Ingress ACL, egress ACL or both
-        direction = ['ingress', 'egress']
-
-        for dir in direction:
+        for dir in DIRECTIONS:
             name = self._arista_acl_name(sgs, dir)
             try:
                 if accumulator is None:
@@ -486,7 +528,7 @@ class AristaSecGroupSwitchDriver(object):
                 self._apply_acl_on_eos(port_id, name, dir, server, cmds)
 
                 if accumulator is None:
-                    self._run_openstack_sg_cmds(cmds, server, cmds)
+                    self._run_openstack_sg_cmds(cmds, server)
             except Exception:
                 msg = (_('Failed to apply ACL on port %s') % port_id)
                 LOG.exception(msg)
@@ -512,9 +554,7 @@ class AristaSecGroupSwitchDriver(object):
         # We already have ACLs on the TORs.
         # Here we need to find out which ACL is applicable - i.e.
         # Ingress ACL, egress ACL or both
-        direction = ['ingress', 'egress']
-
-        for dir in direction:
+        for dir in DIRECTIONS:
             name = self._arista_acl_name(sgs, dir)
             try:
                 self._remove_acl_from_eos(port_id, name, dir, server)
@@ -545,16 +585,18 @@ class AristaSecGroupSwitchDriver(object):
             ret = server.runCmds(version=1, cmds=full_command)
             LOG.debug(_LI('Results of execution on Arista EOS: %s'), ret)
 
-        except Exception:
+        except Exception as e:
             msg = (_('Error occurred while trying to execute '
                      'commands %(cmd)s on EOS %(host)s') %
                    {'cmd': full_command, 'host': server})
             LOG.exception(msg)
             raise arista_exc.AristaServicePluginRpcError(msg=msg)
 
+        return ret
+
     @staticmethod
     def _security_group_name(name):
-        if not isinstance(name, (list, set)):
+        if isinstance(name, six.string_types):
             return name
 
         if len(name) == 1:
@@ -608,8 +650,20 @@ class AristaSecGroupSwitchDriver(object):
             if sgs:
                 all_sgs.add(tuple(sorted(sgs)))
 
+        existing_acls = {}
+        for server in six.itervalues(self._server_by_id):
+            try:
+                existing_acls.update({acl['name']: acl
+                                      for acl in server.runCmds(version=1, cmds=['show ip access-lists'])[0]['aclList']
+                                      if acl['name'].startswith('SG-')
+                                      })
+            except Exception:
+                pass
+
         # Create the ACLs on Arista Switches
         cmds = []
+        security_group_ips = {}
+        known_acls = set()
         for sg_ids in all_sgs:
             if len(sg_ids) == 1:
                 sg = neutron_sgs[sg_ids[0]]
@@ -621,9 +675,11 @@ class AristaSecGroupSwitchDriver(object):
                 }
 
                 for sg_id in sg_ids:
-                    rules.append(neutron_sgs[sg_id]['rules'])
+                    rules.extend(neutron_sgs[sg_id]['security_group_rules'])
 
-            self.create_acl(sg, accumulator=cmds)
+            for direction in DIRECTIONS:
+                known_acls.add(self._arista_acl_name(sg['id'], direction))
+            self.create_acl(sg, accumulator=cmds, security_group_ips=security_group_ips)
 
         for s in six.itervalues(self._server_by_id):
             try:
@@ -669,10 +725,13 @@ class AristaSecGroupSwitchDriver(object):
                 continue
 
             for port_id, sgs in six.iteritems(port_security_groups):
-                self.apply_acl(sgs, server=server, port_id=port_id, accumulator=cmds)
+                self.apply_acl(sgs, server=server, port_id=port_id)
             try:
-                self._run_openstack_sg_cmds(cmds, s)
+                pass # self._run_openstack_sg_cmds(cmds, s)
             except Exception:
                 msg = (_('Failed to apply ACLs on EOS %s') % s)
                 LOG.exception(msg)
                 raise arista_exc.AristaSecurityGroupError(msg=msg)
+
+        unknown_acls = set(existing_acls.iterkeys()) - known_acls
+        LOG.warning("Orphaned ACL %s", unknown_acls)

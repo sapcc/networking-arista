@@ -16,7 +16,8 @@
 from neutron import context as nctx
 import neutron.db.api as db
 from neutron.db import db_base_plugin_v2
-from neutron.db import securitygroups_db as sec_db
+from neutron.db.securitygroups_rpc_base import SecurityGroupServerRpcMixin
+
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2 import db as segments_db
 from neutron.plugins.ml2 import driver_api
@@ -458,7 +459,7 @@ def get_network_segments_by_port_id(port_id):
 
 
 class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,
-                  sec_db.SecurityGroupDbMixin):
+                  SecurityGroupServerRpcMixin):
     """Access to Neutron DB.
 
     Provides access to the Neutron Data bases for all provisioned

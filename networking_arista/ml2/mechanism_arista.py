@@ -666,8 +666,8 @@ class AristaDriver(driver_api.MechanismDriver):
 
         seg_info = self._bound_segments(context)
         if not seg_info:
-            LOG.debug("Ignoring the update as the port is not managed by "
-                      "Arista switches.")
+            LOG.debug("Ignoring the update as the port %s is not managed by "
+                      "Arista switches.", port_id)
             return
 
         with self.eos_sync_lock:

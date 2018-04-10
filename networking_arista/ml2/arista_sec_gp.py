@@ -86,8 +86,8 @@ class AristaSecGroupSwitchDriver(object):
     """
     def __init__(self, neutron_db):
         self._ndb = neutron_db
-        self._servers = []
         self._server_by_id = dict()
+        self._server_by_ip = dict()
         self.sg_enabled = cfg.CONF.ml2_arista.get('sec_group_support')
         self._validate_config()
         for s in cfg.CONF.ml2_arista.switch_info:
@@ -105,14 +105,13 @@ class AristaSecGroupSwitchDriver(object):
             ret = server.runCmds(version=1, cmds=["show lldp local-info management 1"])
             system_id = EUI(ret[0]['chassisId'])
             self._server_by_id[system_id] = server
-            self._server_by_id[switch_ip] = server
-            self._servers.append(server)
+            self._server_by_ip[switch_ip] = server
 
         self.aclCreateDict = acl_cmd['acl']
         self.aclApplyDict = acl_cmd['apply']
 
     def _get_server(self, switch_info, switch_id):
-        return self._server_by_id.get(switch_info) \
+        return self._server_by_ip.get(switch_info) \
                or self._server_by_id.get(EUI(switch_id))
 
     def _validate_config(self):
@@ -328,7 +327,7 @@ class AristaSecGroupSwitchDriver(object):
 
         cmds.append('exit')
 
-        for s in self._servers:
+        for s in six.itervalues(self._server_by_id):
             try:
                 self._run_openstack_sg_cmds(cmds, s)
             except Exception:
@@ -362,7 +361,7 @@ class AristaSecGroupSwitchDriver(object):
         max_port = sgr['port_range_max']
         if not max_port and sgr['protocol'] != 'icmp':
             max_port = 65535
-        for s in self._servers:
+        for s in six.itervalues(self._server_by_id):
             try:
                 self._delete_acl_rule_from_eos(name,
                                                sgr['protocol'],
@@ -397,12 +396,8 @@ class AristaSecGroupSwitchDriver(object):
         Deals with multiple configurations - such as multiple switches
         """
         # Do nothing if Security Groups are not enabled
-        if not self.sg_enabled:
+        if not self.sg_enabled or not sg:
             return
-
-        if not sg:
-            msg = _('Invalid or Empty Security Group Specified')
-            raise arista_exc.AristaSecurityGroupError(msg=msg)
 
         in_cmds, out_cmds = self._create_acl_shell(sg['id'])
         for sgr in sg['security_group_rules']:
@@ -414,7 +409,7 @@ class AristaSecGroupSwitchDriver(object):
             accumulator.extend(in_cmds)
             accumulator.extend(out_cmds)
         else:
-            for s in self._servers:
+            for s in six.itervalues(self._server_by_id):
                 try:
                     self._run_openstack_sg_cmds(in_cmds + out_cmds, s)
                 except Exception:
@@ -439,7 +434,7 @@ class AristaSecGroupSwitchDriver(object):
         for i, d in enumerate(direction):
             name = self._arista_acl_name(sg['id'], d)
 
-            for s in self._servers:
+            for s in six.itervalues(self._server_by_id):
                 try:
                     self._delete_acl_from_eos(name, s)
                 except Exception:
@@ -463,13 +458,13 @@ class AristaSecGroupSwitchDriver(object):
         if not self.sg_enabled or not sgs:
             return
 
+        if server is None:
+            server = self._get_server(switch_info, switch_id)
+
         # We already have ACLs on the TORs.
         # Here we need to find out which ACL is applicable - i.e.
         # Ingress ACL, egress ACL or both
         direction = ['ingress', 'egress']
-
-        if server is None:
-            server = self._get_server(switch_info, switch_id)
 
         for dir in direction:
             name = self._arista_acl_name(sgs, dir)
@@ -488,42 +483,30 @@ class AristaSecGroupSwitchDriver(object):
                 LOG.exception(msg)
                 raise arista_exc.AristaSecurityGroupError(msg=msg)
 
-    def remove_acl(self, sgs, switch_id, port_id, switch_info):
+    def remove_acl(self, sgs, switch_id=None, port_id=None, switch_info=None, server=None):
         """Removes an ACL from Arista Switch.
 
         Removes ACLs from the baremetal ports only. The port/switch
-        details is passed throuhg the parameters.
+        details is passed through the parameters.
         param sgs: List of Security Groups
         param switch_id: Switch ID of TOR where ACL needs to be removed
         param port_id: Port ID of port where ACL needs to be removed
         param switch_info: IP address of the TOR
         """
         # Do nothing if Security Groups are not enabled
-        if not self.sg_enabled:
+        if not self.sg_enabled or not sgs:
             return
 
-        # We do not support more than one security group on a port
-        if not sgs or len(sgs) > 1:
-            msg = (_('Only one Security Group Supported on a port %s') % sgs)
-            raise arista_exc.AristaSecurityGroupError(msg=msg)
-
-        sg = self._ndb.get_security_group(sgs[0])
+        if server is None:
+            server = self._get_server(switch_info, switch_id)
 
         # We already have ACLs on the TORs.
         # Here we need to find out which ACL is applicable - i.e.
         # Ingress ACL, egress ACL or both
-        direction = []
-        for sgr in sg['security_group_rules']:
-            # Only deal with valid protocols - skip the rest
-            if not sgr or sgr['protocol'] not in SUPPORTED_SG_PROTOCOLS:
-                continue
+        direction = ['ingress', 'egress']
 
-            if sgr['direction'] not in direction:
-                direction.append(sgr['direction'])
-
-        server = self._get_server(switch_info, switch_id)
         for dir in direction:
-            name = self._arista_acl_name(sg['id'], dir)
+            name = self._arista_acl_name(sgs, dir)
             try:
                 self._remove_acl_from_eos(port_id, name, dir, server)
             except Exception:
@@ -561,24 +544,28 @@ class AristaSecGroupSwitchDriver(object):
             raise arista_exc.AristaServicePluginRpcError(msg=msg)
 
     @staticmethod
+    def _security_group_name(name):
+        if not isinstance(name, (list, set)):
+            return name
+
+        if len(name) == 1:
+            return name[0]
+        else:
+            s = sha1()
+            for n in sorted(name):
+                s.update(n)
+            return s.hexdigest()
+
+    @staticmethod
     def _arista_acl_name(name, direction):
-        """Generate an arista specific name for this ACL.
+        """Generate an Arista specific name for this ACL.
 
         Use a unique name so that OpenStack created ACLs
         can be distinguished from the user created ACLs
         on Arista HW.
         """
-        in_out = 'IN'
-        if direction == 'egress':
-            in_out = 'OUT'
-        if isinstance(name, (list, set)):
-            if len(name) == 1:
-                name = name[0]
-            else:
-                s = sha1()
-                for n in sorted(name):
-                    s.update(n)
-                name = s.hexdigest()
+        in_out = 'OUT' if direction == 'egress' else 'IN'
+        name = AristaSecGroupSwitchDriver._security_group_name(name)
 
         return 'SG' + '-' + in_out + '-' + name
 
@@ -590,26 +577,46 @@ class AristaSecGroupSwitchDriver(object):
         or neutron reboot
         """
         # Do nothing if Security Groups are not enabled
+
         if not self.sg_enabled:
             return
 
         arista_ports = db_lib.get_ports()
         arista_port_ids = arista_ports.keys()
         sg_bindings = self._ndb.get_all_security_gp_to_port_bindings(filters={'port_id': arista_port_ids})
-        all_sgs = set(binding['security_group_id'] for binding in sg_bindings)
-        neutron_sgs = self._ndb.get_security_groups(filters={'id': all_sgs})
+        neutron_sgs = self._ndb.get_security_groups(
+            filters={'id': set(binding['security_group_id'] for binding in sg_bindings)}
+        )
+
+        all_sgs = set()
         sgs_dict = collections.defaultdict(list)
 
         # Get the list of Security Groups of interest to us
         for s in sg_bindings:
             sgs_dict[s['port_id']].append(s['security_group_id'])
 
+        for sgs in six.itervalues(sgs_dict):
+            if sgs:
+                all_sgs.add(tuple(sorted(sgs)))
+
         # Create the ACLs on Arista Switches
         cmds = []
-        for sg_id in all_sgs:
-            self.create_acl(neutron_sgs[sg_id], accumulator=cmds)
+        for sg_ids in all_sgs:
+            if len(sg_ids) == 1:
+                sg = neutron_sgs[sg_ids[0]]
+            else:
+                rules = []
+                sg = {
+                    'id': self._security_group_name(sg_ids),
+                    'security_group_rules': rules
+                }
 
-        for s in self._servers:
+                for sg_id in sg_ids:
+                    rules.append(neutron_sgs[sg_id]['rules'])
+
+            self.create_acl(sg, accumulator=cmds)
+
+        for s in six.itervalues(self._server_by_id):
             try:
                 self._run_openstack_sg_cmds(cmds, s)
             except Exception:
@@ -618,7 +625,7 @@ class AristaSecGroupSwitchDriver(object):
                 raise arista_exc.AristaSecurityGroupError(msg=msg)
 
         # Get Baremetal port profiles, if any
-        ports_by_switch = collections.defaultdict(list)
+        ports_by_switch = collections.defaultdict(dict)
         for bm in six.itervalues(db_lib.get_all_baremetal_ports()):
             sgs = sgs_dict.get(bm['port_id'])
             if sgs is not None:
@@ -628,14 +635,31 @@ class AristaSecGroupSwitchDriver(object):
                     if not l:
                         # skip all empty entries
                         continue
-                    ports_by_switch[l.get('switch_info'), l.get('switch_id')].append((sgs, l['port_id']))
+                    ports_by_switch[l.get('switch_info'), l.get('switch_id')][l['port_id']] = sgs
 
-        for (switch_info, switch_id), ports in six.iteritems(ports_by_switch):
+        for (switch_info, switch_id), port_security_groups in six.iteritems(ports_by_switch):
             server = self._get_server(switch_info, switch_id)
             if server is None:
                 continue
             cmds = []
-            for sgs, port_id in ports:
+
+            try:
+                ret = server.runCmds(version=1, cmds=["show interfaces " + ",".join(port_security_groups.iterkeys())])[0]
+                for k, v in six.iteritems(ret['interfaces']):
+                    pc = None
+                    membership = v.get('interfaceMembership')
+                    if membership:
+                        pc = membership.rsplit(' ')[-1]
+
+                    if pc not in port_security_groups:
+                        port_security_groups[pc] = port_security_groups[k]
+
+            except Exception:
+                msg = (_('Failed to fetch interfaces from EOS %s') % s)
+                LOG.exception(msg)
+                continue
+
+            for port_id, sgs in six.iteritems(port_security_groups):
                 self.apply_acl(sgs, server=server, port_id=port_id, accumulator=cmds)
             try:
                 self._run_openstack_sg_cmds(cmds, s)

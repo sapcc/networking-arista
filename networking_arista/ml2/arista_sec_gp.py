@@ -661,15 +661,16 @@ class AristaSecGroupSwitchDriver(object):
             if sgs:
                 all_sgs.add(tuple(sorted(sgs)))
 
-        existing_acls = {}
-        for server in six.itervalues(self._server_by_id):
+        existing_acls = dict()
+        for server_id, server in six.iteritems(self._server_by_id):
             try:
-                existing_acls.update({acl['name']: acl
-                                      for acl in server.runCmds(version=1, cmds=['show ip access-lists'])[0]['aclList']
-                                      if acl['name'].startswith('SG-')
-                                      })
+                existing_acls[server_id] = {
+                    acl['name']: acl
+                    for acl in server.runCmds(version=1, cmds=['show ip access-lists'])[0]['aclList']
+                    if acl['name'].startswith('SG-')
+                }
             except Exception:
-                pass
+                existing_acls[server_id] = {}
 
         # Create the ACLs on Arista Switches
         cmds = []
@@ -717,8 +718,6 @@ class AristaSecGroupSwitchDriver(object):
             server = self._get_server(switch_info, switch_id)
             if server is None:
                 continue
-            cmds = []
-
             try:
                 ret = server.runCmds(version=1, cmds=["show interfaces " + ",".join(port_security_groups.iterkeys())])[0]
                 for k, v in six.iteritems(ret['interfaces']):
@@ -737,12 +736,19 @@ class AristaSecGroupSwitchDriver(object):
 
             for port_id, sgs in six.iteritems(port_security_groups):
                 self.apply_acl(sgs, server=server, port_id=port_id)
-            try:
-                pass # self._run_openstack_sg_cmds(cmds, s)
-            except Exception:
-                msg = (_('Failed to apply ACLs on EOS %s') % s)
-                LOG.exception(msg)
-                raise arista_exc.AristaSecurityGroupError(msg=msg)
 
-        unknown_acls = set(existing_acls.iterkeys()) - known_acls
-        LOG.warning("Orphaned ACL %s", unknown_acls)
+        for server_id, acls_on_switch in six.iteritems(existing_acls):
+            unknown_acls = set(acls_on_switch.iterkeys()) - known_acls
+            if not unknown_acls:
+                continue
+
+            LOG.warning("Orphaned ACL on %s: %s", server_id, unknown_acls)
+            server = self._server_by_id[server_id]
+            for name in unknown_acls:
+                try:
+                    self._delete_acl_from_eos(name, server)
+                except Exception:
+                    msg = (_('Failed to create ACL on EOS %s') % s)
+                    LOG.exception(msg)
+                    raise arista_exc.AristaSecurityGroupError(msg=msg)
+

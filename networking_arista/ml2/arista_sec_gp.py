@@ -36,11 +36,13 @@ SUPPORTED_SG_PROTOCOLS = ['tcp', 'udp', 'icmp', 'dhcp', None]
 
 DIRECTIONS = ['ingress', 'egress']
 
-acl_cmd = { # 0: protocol, 1: cidr, 2: from_port, 3: to_port
+acl_cmd = { # For a rule 0: protocol, 1: cidr, 2: from_port, 3: to_port, 4: flags
     'acl': {'create': ['ip access-list {0}',
-                       '5 permit tcp any any established'],
-            'in_rule': ['permit {0} {1} any range {2} {3}'],
+                       'permit tcp any any established'],
+            'in_rule': ['permit {0} {1} any range {2} {3} {4}'],
+            'in_rule_reverse': ['permit {0} any range {2} {3} {1}'],
             'out_rule': ['permit {0} any range 32768 65535 {1} range {2} {3}'],
+            'out_rule_reverse': ['permit {0} {1} range {2} {3} any range 32768 65535'],
             'in_dhcp_rule': ['permit udp {1} eq {2} any eq {3}'],
             'out_dhcp_rule': ['permit udp any eq {3} {1} eq {2}'],
             'in_icmp_custom1': ['permit icmp {0} any {1}'],
@@ -69,16 +71,16 @@ acl_cmd = { # 0: protocol, 1: cidr, 2: from_port, 3: to_port
                                  'exit']},
 
     'apply': {'ingress': ['interface {0}',
-                          'ip access-group {1} in',
+                          'ip access-group {1} out',
                           'exit'],
               'egress': ['interface {0}',
-                         'ip access-group {1} out',
+                         'ip access-group {1} in',
                          'exit'],
               'rm_ingress': ['interface {0}',
-                             'no ip access-group {1} in',
+                             'no ip access-group {1} out',
                              'exit'],
               'rm_egress': ['interface {0}',
-                            'no ip access-group {1} out',
+                            'no ip access-group {1} in',
                             'exit']}}
 
 
@@ -178,19 +180,28 @@ class AristaSecGroupSwitchDriver(object):
             return in_cmds, out_cmds
         else:
             # Non ICMP rules processing here
+            flags = ''
             if direction == 'egress':
-                acl_dict = self.aclCreateDict['out_rule']
-                cmds = out_cmds
+                out_rule = self.aclCreateDict['out_rule']
+                if protocol == 'tcp':
+                    flags = 'syn'
+                    in_rule = []
+                else:
+                    in_rule = self.aclCreateDict['out_rule_reverse']
             else:
-                acl_dict = self.aclCreateDict['in_rule']
-                cmds = in_cmds
+                in_rule = self.aclCreateDict['in_rule']
+                if protocol == 'tcp':
+                    flags = 'syn'
+                    out_rule = []
+                else:
+                    out_rule = self.aclCreateDict['in_rule_reverse']
 
-            if not protocol:
-                acl_dict = self.aclCreateDict['default']
+            for c in in_rule:
+                in_cmds.append(c.format(protocol, cidr, from_port, to_port, flags))
 
-            for c in acl_dict:
-                cmds.append(c.format(protocol, cidr,
-                                     from_port, to_port))
+            for c in out_rule:
+                out_cmds.append(c.format(protocol, cidr, from_port, to_port, flags))
+
             return in_cmds, out_cmds
 
     def _delete_acl_from_eos(self, name, server):
@@ -393,7 +404,7 @@ class AristaSecGroupSwitchDriver(object):
         else:
             protocols = [sgr['protocol']]
 
-        # Build seperate ACL for ingress and egress
+        # Build separate ACL for ingress and egress
         name = self._arista_acl_name(sgr['security_group_id'],
                                      sgr['direction'])
         remote_ip = sgr['remote_ip_prefix']

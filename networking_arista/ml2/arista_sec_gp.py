@@ -18,7 +18,7 @@ import collections
 import json
 import jsonrpclib
 from netaddr import EUI
-
+from hashlib import sha1
 from urllib import quote as urlquote
 from oslo_config import cfg
 from oslo_log import log as logging
@@ -218,7 +218,7 @@ class AristaSecGroupSwitchDriver(object):
             final_rule = rule_type + '_' + rule
             acl_dict = self.aclCreateDict[final_rule]
 
-            # None port is probematic - should be replaced with 0
+            # None port is problematic - should be replaced with 0
             if not from_port:
                 from_port = 0
             if not to_port:
@@ -241,7 +241,7 @@ class AristaSecGroupSwitchDriver(object):
 
         self._run_openstack_sg_cmds(cmds, server)
 
-    def _apply_acl_on_eos(self, port_id, name, direction, server):
+    def _apply_acl_on_eos(self, port_id, name, direction, server, accumulator=None):
         """Creates an ACL on Arista HW Device.
 
         :param port_id: The port where the ACL needs to be applied
@@ -249,12 +249,16 @@ class AristaSecGroupSwitchDriver(object):
         :param direction: must contain "ingress" or "egress"
         :param server: Server endpoint on the Arista switch to be configured
         """
-        cmds = []
+        if accumulator is None:
+            cmds = []
+        else:
+            cmds = accumulator
 
         for c in self.aclApplyDict[direction]:
             cmds.append(c.format(port_id, name))
 
-        self._run_openstack_sg_cmds(cmds, server)
+        if not accumulator:
+            self._run_openstack_sg_cmds(cmds, server)
 
     def _remove_acl_from_eos(self, port_id, name, direction, server):
         """Remove an ACL from a port on Arista HW Device.
@@ -378,17 +382,16 @@ class AristaSecGroupSwitchDriver(object):
         For a given Security Group (ACL), it adds additional rule
         Deals with multiple configurations - such as multiple switches
         """
-        # Build seperate ACL for ingress and egress
+        # Build separate ACL for ingress and egress
         direction = ['ingress', 'egress']
-        cmds = []
-        for d in range(len(direction)):
-            name = self._arista_acl_name(sg_id, direction[d])
-            cmds.append([])
+        cmds = ([], [])
+        for i, d in enumerate(direction):
+            name = self._arista_acl_name(sg_id, d)
             for c in self.aclCreateDict['create']:
-                cmds[d].append(c.format(name))
-        return cmds[0], cmds[1]
+                cmds[i].append(c.format(name))
+        return cmds
 
-    def create_acl(self, sg):
+    def create_acl(self, sg, accumulator=None):
         """Creates an ACL on Arista Switch.
 
         Deals with multiple configurations - such as multiple switches
@@ -407,13 +410,17 @@ class AristaSecGroupSwitchDriver(object):
         in_cmds.append('exit')
         out_cmds.append('exit')
 
-        for s in self._servers:
-            try:
-                self._run_openstack_sg_cmds(in_cmds + out_cmds, s)
-            except Exception:
-                msg = (_('Failed to create ACL on EOS %s') % s)
-                LOG.exception(msg)
-                raise arista_exc.AristaSecurityGroupError(msg=msg)
+        if accumulator is not None:
+            accumulator.extend(in_cmds)
+            accumulator.extend(out_cmds)
+        else:
+            for s in self._servers:
+                try:
+                    self._run_openstack_sg_cmds(in_cmds + out_cmds, s)
+                except Exception:
+                    msg = (_('Failed to create ACL on EOS %s') % s)
+                    LOG.exception(msg)
+                    raise arista_exc.AristaSecurityGroupError(msg=msg)
 
     def delete_acl(self, sg):
         """Deletes an ACL from Arista Switch.
@@ -429,8 +436,8 @@ class AristaSecGroupSwitchDriver(object):
             raise arista_exc.AristaSecurityGroupError(msg=msg)
 
         direction = ['ingress', 'egress']
-        for d in range(len(direction)):
-            name = self._arista_acl_name(sg['id'], direction[d])
+        for i, d in enumerate(direction):
+            name = self._arista_acl_name(sg['id'], d)
 
             for s in self._servers:
                 try:
@@ -440,7 +447,7 @@ class AristaSecGroupSwitchDriver(object):
                     LOG.exception(msg)
                     raise arista_exc.AristaSecurityGroupError(msg=msg)
 
-    def apply_acl(self, sgs, switch_id=None, port_id=None, switch_info=None, server=None):
+    def apply_acl(self, sgs, switch_id=None, port_id=None, switch_info=None, server=None, accumulator=None):
         """Creates an ACL on Arista Switch.
 
         Applies ACLs to the baremetal ports only. The port/switch
@@ -453,15 +460,8 @@ class AristaSecGroupSwitchDriver(object):
         param server: Reference to the RPC Server for the switch
         """
         # Do nothing if Security Groups are not enabled
-        if not self.sg_enabled:
+        if not self.sg_enabled or not sgs:
             return
-
-        # We do not support more than one security group on a port
-        if not sgs or len(sgs) > 1:
-            msg = (_('Only one Security Group Supported on a port %s') % sgs)
-            raise arista_exc.AristaSecurityGroupError(msg=msg)
-
-        sg = self._ndb.get_security_group(sgs[0])
 
         # We already have ACLs on the TORs.
         # Here we need to find out which ACL is applicable - i.e.
@@ -472,9 +472,17 @@ class AristaSecGroupSwitchDriver(object):
             server = self._get_server(switch_info, switch_id)
 
         for dir in direction:
-            name = self._arista_acl_name(sg['id'], dir)
+            name = self._arista_acl_name(sgs, dir)
             try:
-                self._apply_acl_on_eos(port_id, name, dir, server)
+                if accumulator is None:
+                    cmds = []
+                else:
+                    cmds = accumulator
+
+                self._apply_acl_on_eos(port_id, name, dir, server, cmds)
+
+                if accumulator is None:
+                    self._run_openstack_sg_cmds(cmds, server, cmds)
             except Exception:
                 msg = (_('Failed to apply ACL on port %s') % port_id)
                 LOG.exception(msg)
@@ -552,7 +560,8 @@ class AristaSecGroupSwitchDriver(object):
             LOG.exception(msg)
             raise arista_exc.AristaServicePluginRpcError(msg=msg)
 
-    def _arista_acl_name(self, name, direction):
+    @staticmethod
+    def _arista_acl_name(name, direction):
         """Generate an arista specific name for this ACL.
 
         Use a unique name so that OpenStack created ACLs
@@ -562,6 +571,15 @@ class AristaSecGroupSwitchDriver(object):
         in_out = 'IN'
         if direction == 'egress':
             in_out = 'OUT'
+        if isinstance(name, (list, set)):
+            if len(name) == 1:
+                name = name[0]
+            else:
+                s = sha1()
+                for n in sorted(name):
+                    s.update(n)
+                name = s.hexdigest()
+
         return 'SG' + '-' + in_out + '-' + name
 
     def perform_sync_of_sg(self):
@@ -587,8 +605,17 @@ class AristaSecGroupSwitchDriver(object):
             sgs_dict[s['port_id']].append(s['security_group_id'])
 
         # Create the ACLs on Arista Switches
+        cmds = []
         for sg_id in all_sgs:
-            self.create_acl(neutron_sgs[sg_id])
+            self.create_acl(neutron_sgs[sg_id], accumulator=cmds)
+
+        for s in self._servers:
+            try:
+                self._run_openstack_sg_cmds(cmds, s)
+            except Exception:
+                msg = (_('Failed to create ACL on EOS %s') % s)
+                LOG.exception(msg)
+                raise arista_exc.AristaSecurityGroupError(msg=msg)
 
         # Get Baremetal port profiles, if any
         ports_by_switch = collections.defaultdict(list)
@@ -607,7 +634,12 @@ class AristaSecGroupSwitchDriver(object):
             server = self._get_server(switch_info, switch_id)
             if server is None:
                 continue
-
+            cmds = []
             for sgs, port_id in ports:
-                self.apply_acl(sgs, server=server, port_id=port_id)
-
+                self.apply_acl(sgs, server=server, port_id=port_id, accumulator=cmds)
+            try:
+                self._run_openstack_sg_cmds(cmds, s)
+            except Exception:
+                msg = (_('Failed to apply ACLs on EOS %s') % s)
+                LOG.exception(msg)
+                raise arista_exc.AristaSecurityGroupError(msg=msg)

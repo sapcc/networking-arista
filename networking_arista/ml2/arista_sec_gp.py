@@ -42,7 +42,8 @@ acl_cmd = { # For a rule 0: protocol, 1: cidr, 2: from_port, 3: to_port, 4: flag
             'in_rule': ['permit {0} {1} any range {2} {3} {4}'],
             'in_rule_reverse': ['permit {0} any range {2} {3} {1}'],
             'out_rule': ['permit {0} any range 32768 65535 {1} range {2} {3}'],
-            'out_rule_reverse': ['permit {0} {1} range {2} {3} any range 32768 65535'],
+            'out_rule_tcp': ['permit {0} any {1} range {2} {3} {4}'],
+            'out_rule_reverse': ['permit {0} {1} range {2} {3} any {4}'],
             'in_dhcp_rule': ['permit udp {1} eq {2} any eq {3}'],
             'out_dhcp_rule': ['permit udp any eq {3} {1} eq {2}'],
             'in_icmp_custom1': ['permit icmp {0} any {1}'],
@@ -137,6 +138,15 @@ class AristaSecGroupSwitchDriver(object):
         :param name: Name for the ACL
         :param server: Server endpoint on the Arista switch to be configured
         """
+
+        if cidr:
+            if cidr == 'any' or cidr.endswith('/0'):
+                cidr = 'any'
+            elif cidr.endswith('/32'):
+                cidr = 'host ' + cidr[:-3]
+            elif '/' not in cidr:
+                cidr = 'host ' + cidr
+
         if protocol == 'icmp':
             # ICMP rules require special processing
             if ((from_port and to_port) or
@@ -182,11 +192,13 @@ class AristaSecGroupSwitchDriver(object):
             # Non ICMP rules processing here
             flags = ''
             if direction == 'egress':
-                out_rule = self.aclCreateDict['out_rule']
                 if protocol == 'tcp':
                     flags = 'syn'
+                    out_rule = self.aclCreateDict['out_rule_tcp']
                     in_rule = []
                 else:
+                    flags = 'range 32768 65535'
+                    out_rule = self.aclCreateDict['out_rule']
                     in_rule = self.aclCreateDict['out_rule_reverse']
             else:
                 in_rule = self.aclCreateDict['in_rule']
@@ -320,7 +332,7 @@ class AristaSecGroupSwitchDriver(object):
         else:
             protocols = [sgr['protocol']]
 
-        remote_ips = None
+        remote_ips = ['any']
         remote_ip_prefix = sgr['remote_ip_prefix']
         remote_group_id = sgr['remote_group_id']
 
@@ -333,9 +345,6 @@ class AristaSecGroupSwitchDriver(object):
                 security_group_ips.update(fetched)
 
             remote_ips = security_group_ips[remote_group_id]
-
-        if remote_ips is None:
-            remote_ips = ['any']
 
         min_port = sgr['port_range_min']
         if not min_port:
@@ -446,7 +455,7 @@ class AristaSecGroupSwitchDriver(object):
                 cmds[i].append(c.format(name))
         return cmds
 
-    def create_acl(self, sg, accumulator=None, security_group_ips=None):
+    def create_acl(self, sg, accumulator=None, security_group_ips=None, existing_acls=None):
         """Creates an ACL on Arista Switch.
 
         Deals with multiple configurations - such as multiple switches
@@ -455,7 +464,23 @@ class AristaSecGroupSwitchDriver(object):
         if not self.sg_enabled or not sg:
             return
 
-        in_cmds, out_cmds = self._create_acl_shell(sg['id'])
+        security_group_id = sg['id']
+
+        known_ingress = set()
+        known_egress = set()
+
+        if existing_acls is not None:
+            for item in six.itervalues(existing_acls):
+                for acl in item.get(self._arista_acl_name(security_group_id, 'ingress'), []):
+                    known_ingress.add(acl['text'])
+                for acl in item.get(self._arista_acl_name(security_group_id, 'egress'), []):
+                    known_egress.add(acl['text'])
+
+        in_cmds, out_cmds = self._create_acl_shell(security_group_id)
+
+        in_prefix = len(in_cmds)
+        out_prefix = len(out_cmds)
+
         security_group_rules = sg['security_group_rules']
         security_group_rules.append({'protocol': 'dhcp',
                                      'remote_ip_prefix': None,
@@ -466,7 +491,18 @@ class AristaSecGroupSwitchDriver(object):
                                      })
 
         for sgr in security_group_rules:
-            in_cmds, out_cmds = self._create_acl_rule(in_cmds, out_cmds, sgr, security_group_ips=security_group_ips)
+            in_start = len(in_cmds)
+            out_start = len(out_cmds)
+            in_cmds, out_cmds = self._create_acl_rule(in_cmds, out_cmds, sgr,
+                                                      security_group_ips=security_group_ips)
+            for cmd in in_cmds[in_start:]:
+                known_ingress.discard(cmd)
+            for cmd in out_cmds[out_start:]:
+                known_egress.discard(cmd)
+
+        in_cmds = in_cmds[:in_prefix] + ['no ' + rule for rule in known_ingress] + in_cmds[in_prefix:]
+        out_cmds = out_cmds[:out_prefix] + ['no ' + rule for rule in known_egress] + out_cmds[out_prefix:]
+
         in_cmds.append('exit')
         out_cmds.append('exit')
 
@@ -665,7 +701,7 @@ class AristaSecGroupSwitchDriver(object):
         for server_id, server in six.iteritems(self._server_by_id):
             try:
                 existing_acls[server_id] = {
-                    acl['name']: acl
+                    acl['name']: acl['sequence']
                     for acl in server.runCmds(version=1, cmds=['show ip access-lists'])[0]['aclList']
                     if acl['name'].startswith('SG-')
                 }
@@ -691,7 +727,10 @@ class AristaSecGroupSwitchDriver(object):
 
             for direction in DIRECTIONS:
                 known_acls.add(self._arista_acl_name(sg['id'], direction))
-            self.create_acl(sg, accumulator=cmds, security_group_ips=security_group_ips)
+            self.create_acl(sg,
+                            accumulator=cmds,
+                            security_group_ips=security_group_ips,
+                            existing_acls=existing_acls)
 
         for s in six.itervalues(self._server_by_id):
             try:

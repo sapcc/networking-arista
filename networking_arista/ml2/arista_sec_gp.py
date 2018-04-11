@@ -19,7 +19,6 @@ import json
 import jsonrpclib
 from netaddr import EUI
 from hashlib import sha1
-from urllib import quote as urlquote
 from oslo_config import cfg
 from oslo_log import log as logging
 
@@ -103,7 +102,7 @@ class AristaSecGroupSwitchDriver(object):
             if switch_pass == "''":
                 switch_pass = ''
             eapi_server_url = ('https://%s:%s@%s/command-api' %
-                               (switch_user, urlquote(switch_pass), switch_ip))
+                               (switch_user, switch_pass, switch_ip))
             transport = jsonrpclib.jsonrpc.SafeTransport()
             # TODO: Make that a configuration value
             if hasattr(ssl, '_create_unverified_context'):

@@ -41,7 +41,7 @@ acl_cmd = { # For a rule 0: protocol, 1: cidr, 2: from_port, 3: to_port, 4: flag
                        'permit tcp any any established'],
             'in_rule': ['permit {0} {1} any range {2} {3} {4}'],
             'in_rule_reverse': ['permit {0} any range {2} {3} {1}'],
-            'out_rule': ['permit {0} any range 32768 65535 {1} range {2} {3}'],
+            'out_rule': ['permit {0} any {1} range {2} {3}'],
             'out_rule_tcp': ['permit {0} any {1} range {2} {3} {4}'],
             'out_rule_reverse': ['permit {0} {1} range {2} {3} any {4}'],
             'in_dhcp_rule': ['permit udp {1} eq {2} any eq {3}'],

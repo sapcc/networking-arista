@@ -2071,13 +2071,15 @@ class SyncService(object):
         """Sets the force_sync flag."""
         self._force_sync = True
 
-    def do_synchronize(self):
+    def do_synchronize(self, lock=None):
         """Periodically check whether EOS is in sync with ML2 driver.
 
            If ML2 database is not in sync with EOS, then compute the diff and
            send it down to EOS.
         """
         # Perform sync of Security Groups unconditionally
+        if lock:
+            lock.release()
         try:
             self._rpc.perform_sync_of_sg()
         except Exception as e:
@@ -2100,7 +2102,11 @@ class SyncService(object):
             return
 
         # Perform the actual synchronization.
-        self.synchronize()
+        if lock:
+            with lock:
+                self.synchronize()
+        else:
+            self.synchronize()
 
         # Send 'sync end' marker.
         if not self._rpc.sync_end():

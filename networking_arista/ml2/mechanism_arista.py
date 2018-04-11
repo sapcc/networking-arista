@@ -947,7 +947,7 @@ class AristaDriver(driver_api.MechanismDriver):
 
     def _synchronization_thread(self):
         with self.eos_sync_lock:
-            self.sync_service.do_synchronize()
+            self.sync_service.do_synchronize(self.eos_sync_lock)
 
     def stop_synchronization_thread(self):
         if self.timer:

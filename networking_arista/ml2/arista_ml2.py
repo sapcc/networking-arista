@@ -273,7 +273,7 @@ class AristaRPCWrapperBase(object):
                 msg = (_("Failed to remove ACL %(sg)s on switch %(switch)%") %
                        {'sg': sg, 'switch': s['switch_info']})
                 LOG.warning(msg)
-        raise arista_exc.AristaSecurityGroupError(msg=msg)
+        # raise arista_exc.AristaSecurityGroupError(msg=msg)
 
     def create_acl(self, sg):
         """Creates an ACL on Arista Switch.

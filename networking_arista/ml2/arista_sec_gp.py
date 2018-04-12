@@ -308,9 +308,11 @@ class AristaSecGroupSwitchDriver(object):
         """
         cmds = []
 
-        acl_cmd = self.aclApplyDict['rm_ingress']
         if direction == 'egress':
             acl_cmd = self.aclApplyDict['rm_egress']
+        else:
+            acl_cmd = self.aclApplyDict['rm_ingress']
+
         for c in acl_cmd:
             cmds.append(c.format(port_id, name))
 

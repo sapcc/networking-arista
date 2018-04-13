@@ -21,6 +21,8 @@ from netaddr import EUI
 from hashlib import sha1
 from oslo_config import cfg
 from oslo_log import log as logging
+from socket import error as socket_error
+from httplib import HTTPException
 
 from networking_arista._i18n import _, _LI
 from networking_arista.common import db_lib
@@ -97,8 +99,17 @@ class AristaSecGroupSwitchDriver(object):
         self._server_by_ip = dict()
         self.sg_enabled = cfg.CONF.ml2_arista.get('sec_group_support')
         self._validate_config()
+        self._maintain_connections()
+
+        self.aclCreateDict = acl_cmd['acl']
+        self.aclApplyDict = acl_cmd['apply']
+
+    def _maintain_connections(self):
         for s in cfg.CONF.ml2_arista.switch_info:
             switch_ip, switch_user, switch_pass = s.split(":")
+            if switch_ip in self._server_by_ip:
+                continue
+
             if switch_pass == "''":
                 switch_pass = ''
             eapi_server_url = ('https://%s:%s@%s/command-api' %
@@ -108,14 +119,13 @@ class AristaSecGroupSwitchDriver(object):
             if hasattr(ssl, '_create_unverified_context'):
                 transport.context = ssl._create_unverified_context()
             server = jsonrpclib.Server(eapi_server_url, transport=transport)
-
-            ret = server.runCmds(version=1, cmds=["show lldp local-info management 1"])
-            system_id = EUI(ret[0]['chassisId'])
-            self._server_by_id[system_id] = server
-            self._server_by_ip[switch_ip] = server
-
-        self.aclCreateDict = acl_cmd['acl']
-        self.aclApplyDict = acl_cmd['apply']
+            try:
+                ret = server.runCmds(version=1, cmds=["show lldp local-info management 1"])
+                system_id = EUI(ret[0]['chassisId'])
+                self._server_by_id[system_id] = server
+                self._server_by_ip[switch_ip] = server
+            except (socket_error, HTTPException) as e:
+                LOG.warn("Could not connect to server %s due to %s", switch_ip, e)
 
     def _get_server(self, switch_info, switch_id):
         return self._server_by_ip.get(switch_info) \
@@ -672,6 +682,8 @@ class AristaSecGroupSwitchDriver(object):
 
         if not self.sg_enabled:
             return
+
+        self._maintain_connections()
 
         arista_ports = db_lib.get_ports()
         arista_port_ids = set(arista_ports.iterkeys())

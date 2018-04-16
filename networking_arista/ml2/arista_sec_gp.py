@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import os
 import six
 import ssl
 import collections
@@ -27,6 +28,7 @@ from httplib import HTTPException
 from networking_arista._i18n import _, _LI
 from networking_arista.common import db_lib
 from networking_arista.common import exceptions as arista_exc
+from datadog.dogstatsd import DogStatsd
 
 LOG = logging.getLogger(__name__)
 
@@ -100,6 +102,11 @@ class AristaSecGroupSwitchDriver(object):
         self.sg_enabled = cfg.CONF.ml2_arista.get('sec_group_support')
         self._validate_config()
         self._maintain_connections()
+        self._statsd = DogStatsd(
+            host=os.getenv('STATSD_HOST', 'localhost'),
+            port=int(os.getenv('STATSD_PORT', '8125')),
+            namespace=os.getenv('STATSD_PREFIX', 'openstack')
+        )
 
         self.aclCreateDict = acl_cmd['acl']
         self.aclApplyDict = acl_cmd['apply']
@@ -714,6 +721,15 @@ class AristaSecGroupSwitchDriver(object):
                 }
             except Exception:
                 existing_acls[server_id] = {}
+
+            for _, acls in six.iteritems(existing_acls):
+                for sg_name, rules in six.iteritems(acls):
+                    sg_index = 6 if sg_name.startswith("SG-IN") else 7
+                    tags = ["server.id:"+str(server_id), "security.group:"+sg_name[sg_index:]]
+                    if sg_name[sg_index:] in neutron_sgs:
+                        tags.append("project.id:"+neutron_sgs[sg_name[sg_index:]]['tenant_id'])
+                    self._statsd.gauge('networking.arista.security.groups', len(rules),
+                                       tags=tags)
 
         # Create the ACLs on Arista Switches
         security_group_ips = {}

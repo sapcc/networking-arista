@@ -15,6 +15,7 @@
 import os
 import six
 import ssl
+import socket
 import collections
 import json
 import jsonrpclib
@@ -147,6 +148,12 @@ class AristaSecGroupSwitchDriver(object):
             LOG.exception(msg)
             raise arista_exc.AristaConfigError(msg=msg)
 
+    def _get_port_name(self, port, protocol=None):
+        try:
+            return socket.getservbyport(port, protocol)
+        except socket.error:
+            return port
+
     def _create_acl_on_eos(self, in_cmds, out_cmds, protocol, cidr,
                            from_port, to_port, direction):
         """Creates an ACL on Arista HW Device.
@@ -187,6 +194,9 @@ class AristaSecGroupSwitchDriver(object):
                 from_port = 0
             if not to_port:
                 to_port = 0
+
+            from_port = self._get_port_name(from_port, protocol)
+            to_port = self._get_port_name(to_port, protocol)
 
             for c in acl_dict:
                 if rule == 'icmp_custom2':

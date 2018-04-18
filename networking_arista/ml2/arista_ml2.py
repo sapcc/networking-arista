@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import abc
+import six
 import base64
 import json
 import os
@@ -575,7 +576,7 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
         except ValueError:
             LOG.warning(_LW("Ignoring invalid JSON response: %s"), resp.text)
         except Exception as error:
-            msg = unicode(error)
+            msg = six.text_type(error)
             LOG.warning(msg)
             # reraise the exception
             with excutils.save_and_reraise_exception() as ctxt:
@@ -596,7 +597,7 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
     def _send_api_request(self, path, method, data=None, sanitized_data=None):
         host = self._get_eos_master()
         if not host:
-            msg = unicode("Could not find CVX leader")
+            msg = six.u("Could not find CVX leader")
             LOG.info(msg)
             self.set_cvx_unavailable()
             raise arista_exc.AristaRpcError(msg=msg)
@@ -1239,8 +1240,8 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                     for data in response.json()['error']['data']:
                         if type(data) == dict and 'errors' in data:
                             if ERR_CVX_NOT_LEADER in data['errors'][0]:
-                                msg = unicode("%s is not the master" % (
-                                              self._server_ip))
+                                msg = six.u("%s is not the master") % (
+                                    self._server_ip)
                                 LOG.info(msg)
                                 return None
 
@@ -1271,7 +1272,7 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
             LOG.info("Ignoring invalid JSON response")
             return None
         except Exception as error:
-            msg = unicode(error)
+            msg = six.text_type(error)
             LOG.warning(msg)
             raise
 

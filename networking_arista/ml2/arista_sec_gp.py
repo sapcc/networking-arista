@@ -531,13 +531,18 @@ class AristaSecGroupSwitchDriver(object):
             for cmd in out_cmds[out_start:]:
                 known_egress.discard(cmd)
 
+        num_rules = len(in_cmds) - in_prefix + len(out_cmds) - out_prefix
         in_cmds = in_cmds[:in_prefix] + ['no ' + rule for rule in known_ingress] + in_cmds[in_prefix:]
         out_cmds = out_cmds[:out_prefix] + ['no ' + rule for rule in known_egress] + out_cmds[out_prefix:]
 
         in_cmds.append('exit')
         out_cmds.append('exit')
 
-        for s in six.itervalues(self._server_by_id):
+        for server_id, s in six.iteritems(self._server_by_id):
+            tags = ['server.id:' + str(server_id), 'security.group:' + sg['id'],
+                    'project.id:' + sg['tenant_id']
+                    ]
+            self._statsd.gauge('networking.arista.security.groups', num_rules, tags=tags)
             try:
                 self._run_openstack_sg_cmds(in_cmds + out_cmds, s)
             except Exception:
@@ -561,7 +566,11 @@ class AristaSecGroupSwitchDriver(object):
         for i, d in enumerate(DIRECTIONS):
             name = self._arista_acl_name(sg['id'], d)
 
-            for s in six.itervalues(self._server_by_id):
+            for server_id, s in six.iteritems(self._server_by_id):
+                tags = ['server.id:' + str(server_id), 'security.group:' + sg['id'],
+                        'project.id:' + sg['tenant_id']
+                        ]
+                self._statsd.gauge('networking.arista.security.groups', 0, tags=tags)
                 try:
                     self._delete_acl_from_eos(name, s)
                 except Exception:
@@ -731,15 +740,6 @@ class AristaSecGroupSwitchDriver(object):
                 }
             except Exception:
                 existing_acls[server_id] = {}
-
-            for _, acls in six.iteritems(existing_acls):
-                for sg_name, rules in six.iteritems(acls):
-                    sg_index = 6 if sg_name.startswith("SG-IN") else 7
-                    tags = ["server.id:"+str(server_id), "security.group:"+sg_name[sg_index:]]
-                    if sg_name[sg_index:] in neutron_sgs:
-                        tags.append("project.id:"+neutron_sgs[sg_name[sg_index:]]['tenant_id'])
-                    self._statsd.gauge('networking.arista.security.groups', len(rules),
-                                       tags=tags)
 
         # Create the ACLs on Arista Switches
         security_group_ips = {}

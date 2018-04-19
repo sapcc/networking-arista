@@ -531,6 +531,15 @@ class AristaSecGroupSwitchDriver(object):
             for cmd in out_cmds[out_start:]:
                 known_egress.discard(cmd)
 
+        self._statsd.gauge('networking.arista.security.group', len(in_cmds) - 1,
+                           ["security.group:" + security_group_id,
+                            "direction:ingress",
+                            "project_id:" + sg['tenant_id']])
+        self._statsd.gauge('networking.arista.security.group', len(out_cmds) - 1,
+                           ["security.group:" + security_group_id,
+                            "direction:egress",
+                            "project_id:" + sg['tenant_id']])
+
         in_cmds = in_cmds[:in_prefix] + [str('no ' + rule) for rule in known_ingress] + in_cmds[in_prefix:]
         out_cmds = out_cmds[:out_prefix] + [str('no ' + rule) for rule in known_egress] + out_cmds[out_prefix:]
 
@@ -732,15 +741,6 @@ class AristaSecGroupSwitchDriver(object):
             except Exception:
                 existing_acls[server_id] = {}
 
-            for _, acls in six.iteritems(existing_acls):
-                for sg_name, rules in six.iteritems(acls):
-                    sg_index = 6 if sg_name.startswith("SG-IN") else 7
-                    tags = ["server.id:"+str(server_id), "security.group:"+sg_name[sg_index:]]
-                    if sg_name[sg_index:] in neutron_sgs:
-                        tags.append("project.id:"+neutron_sgs[sg_name[sg_index:]]['tenant_id'])
-                    self._statsd.gauge('networking.arista.security.groups', len(rules),
-                                       tags=tags)
-
         # Create the ACLs on Arista Switches
         security_group_ips = {}
         known_acls = set()
@@ -751,7 +751,8 @@ class AristaSecGroupSwitchDriver(object):
                 rules = []
                 sg = {
                     'id': self._security_group_name(sg_ids),
-                    'security_group_rules': rules
+                    'security_group_rules': rules,
+                    'tenant_id': neutron_sgs[sg_ids[0]]['tenant_id']
                 }
 
                 for sg_id in sg_ids:

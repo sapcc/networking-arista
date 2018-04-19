@@ -213,9 +213,9 @@ class AristaSecGroupSwitchDriver(object):
 
             for c in acl_dict:
                 if rule == 'icmp_custom2':
-                    cmds.append(c.format(cidr, from_port, to_port).strip())
+                    cmds.append(c.format(cidr, from_port, to_port))
                 else:
-                    cmds.append(c.format(cidr, from_port).strip())
+                    cmds.append(c.format(cidr, from_port))
             return in_cmds, out_cmds
         elif protocol == 'dhcp':
             # Not really a layer2 protocol
@@ -248,16 +248,10 @@ class AristaSecGroupSwitchDriver(object):
                     out_rule = self.aclCreateDict['in_rule_reverse']
 
             for c in in_rule:
-                in_cmds.append(c.format(protocol, cidr,
-                                        self._get_port_name(from_port, protocol),
-                                        self._get_port_name(to_port, protocol), flags)
-                               .strip())
+                in_cmds.append(c.format(protocol, cidr, from_port, to_port, flags).strip())
 
             for c in out_rule:
-                out_cmds.append(c.format(protocol, cidr,
-                                         self._get_port_name(from_port, protocol),
-                                         self._get_port_name(to_port, protocol), flags)
-                                .strip())
+                out_cmds.append(c.format(protocol, cidr, from_port, to_port, flags).strip())
 
             return in_cmds, out_cmds
 
@@ -549,9 +543,9 @@ class AristaSecGroupSwitchDriver(object):
 
             for network in self._consolidate_ips(consolidation_dict):
                 if dir == 'ingress':
-                    processed_cmds[dir].append("permit %s %s any range %s %s %s" % network)
+                    processed_cmds[dir].append("permit %s %s any range %s %s %s".strip() % network)
                 else:
-                    processed_cmds[dir].append("permit %s any %s range %s %s %s" % network)
+                    processed_cmds[dir].append("permit %s any %s range %s %s %s".strip() % network)
 
         LOG.debug("Consolidated ACLs from %d/%d to %d/%d!" %
                   (len(cmds['ingress']),

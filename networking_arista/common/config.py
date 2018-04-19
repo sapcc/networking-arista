@@ -106,6 +106,13 @@ ARISTA_DRIVER_OPTS = [
                        'participate on binding or updating a port.'
                        'For Example: '
                        'managed_physnets = arista_network')),
+    cfg.IntOpt('consolidation_limit',
+               default=0,
+               help=_('Sets a limit per Arista Switch for ACL rule count '
+                      'before initiation of a consolidation algorithm that '
+                      'tries to merge ACL Rules into shared subnets in order '
+                      'to minimize total rule count. 0 to disable.')),
+
 ]
 
 

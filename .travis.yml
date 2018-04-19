@@ -1,0 +1,10 @@
+sudo: false
+language: python
+python:
+  - "2.7"
+install: 
+  - pip install tox-travis
+  - curl -L https://github.com/Mic92/iana-etc/releases/download/20180420/iana-etc-20180420.tar.gz | tar xvz
+  - sudo mv -f iana-etc-20180420/services /etc/services
+script: tox
+

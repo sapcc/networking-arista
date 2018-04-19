@@ -531,18 +531,19 @@ class AristaSecGroupSwitchDriver(object):
             for cmd in out_cmds[out_start:]:
                 known_egress.discard(cmd)
 
-        num_rules = len(in_cmds) - in_prefix + len(out_cmds) - out_prefix
-        in_cmds = in_cmds[:in_prefix] + ['no ' + rule for rule in known_ingress] + in_cmds[in_prefix:]
-        out_cmds = out_cmds[:out_prefix] + ['no ' + rule for rule in known_egress] + out_cmds[out_prefix:]
+        num_rules = { 'ingress': len(in_cmds) - in_prefix, 'egress': len(out_cmds) - out_prefix }
+        in_cmds = in_cmds[:in_prefix] + [str('no ' + rule) for rule in known_ingress] + in_cmds[in_prefix:]
+        out_cmds = out_cmds[:out_prefix] + [str('no ' + rule) for rule in known_egress] + out_cmds[out_prefix:]
 
         in_cmds.append('exit')
         out_cmds.append('exit')
 
         for server_id, s in six.iteritems(self._server_by_id):
-            tags = ['server.id:' + str(server_id), 'security.group:' + sg['id'],
-                    'project.id:' + sg['tenant_id']
-                    ]
-            self._statsd.gauge('networking.arista.security.groups', num_rules, tags=tags)
+            for dir in DIRECTIONS:
+                tags = ['server.id:' + str(server_id), 'security.group:' + sg['id'],
+                        'project.id:' + sg['tenant_id'], 'direction:' + dir
+                        ]
+                self._statsd.gauge('networking.arista.security.groups', num_rules[dir], tags=tags)
             try:
                 self._run_openstack_sg_cmds(in_cmds + out_cmds, s)
             except Exception:
@@ -568,7 +569,7 @@ class AristaSecGroupSwitchDriver(object):
 
             for server_id, s in six.iteritems(self._server_by_id):
                 tags = ['server.id:' + str(server_id), 'security.group:' + sg['id'],
-                        'project.id:' + sg['tenant_id']
+                        'project.id:' + sg['tenant_id'], 'direction:' + d
                         ]
                 self._statsd.gauge('networking.arista.security.groups', 0, tags=tags)
                 try:
@@ -751,7 +752,8 @@ class AristaSecGroupSwitchDriver(object):
                 rules = []
                 sg = {
                     'id': self._security_group_name(sg_ids),
-                    'security_group_rules': rules
+                    'security_group_rules': rules,
+                    'tenant_id': neutron_sgs[sg_ids[0]]['tenant_id']
                 }
 
                 for sg_id in sg_ids:

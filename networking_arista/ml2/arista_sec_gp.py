@@ -531,8 +531,8 @@ class AristaSecGroupSwitchDriver(object):
             for cmd in out_cmds[out_start:]:
                 known_egress.discard(cmd)
 
-        in_cmds = in_cmds[:in_prefix] + ['no ' + rule for rule in known_ingress] + in_cmds[in_prefix:]
-        out_cmds = out_cmds[:out_prefix] + ['no ' + rule for rule in known_egress] + out_cmds[out_prefix:]
+        in_cmds = in_cmds[:in_prefix] + [str('no ' + rule) for rule in known_ingress] + in_cmds[in_prefix:]
+        out_cmds = out_cmds[:out_prefix] + [str('no ' + rule) for rule in known_egress] + out_cmds[out_prefix:]
 
         in_cmds.append('exit')
         out_cmds.append('exit')

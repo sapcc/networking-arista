@@ -512,7 +512,7 @@ class AristaSecGroupSwitchDriver(object):
         in_prefix = len(in_cmds)
         out_prefix = len(out_cmds)
 
-        security_group_rules = sg['security_group_rules']
+        security_group_rules = list(sg['security_group_rules'])
         security_group_rules.append({'protocol': 'dhcp',
                                      'remote_ip_prefix': None,
                                      'remote_group_id': None,
@@ -575,7 +575,7 @@ class AristaSecGroupSwitchDriver(object):
                 try:
                     self._delete_acl_from_eos(name, s)
                 except Exception:
-                    msg = (_('Failed to create ACL on EOS %s') % s)
+                    msg = (_('Failed to delete ACL on EOS %s') % s)
                     LOG.exception(msg)
                     raise arista_exc.AristaSecurityGroupError(msg=msg)
 

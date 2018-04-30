@@ -752,6 +752,13 @@ class AristaDriver(driver_api.MechanismDriver):
 
     def delete_port_precommit(self, context):
         """Delete information about a VM and host from the DB."""
+        # Check if the port is part of managed physical network
+        seg_info = self._bound_segments(context)
+        if not seg_info:
+            # Ignoring the update as the port is not managed by
+            # arista mechanism driver.
+            return
+
         port = context.current
 
         pretty_log("delete_port_precommit:", port)
@@ -768,6 +775,13 @@ class AristaDriver(driver_api.MechanismDriver):
         Send provisioning request to Arista Hardware to unplug a host
         from appropriate network.
         """
+        # Check if the port is part of managed physical network
+        seg_info = self._bound_segments(context)
+        if not seg_info:
+            # Ignoring the update as the port is not managed by
+            # arista mechanism driver.
+            return
+
         port = context.current
         host = context.host
         network_id = port['network_id']

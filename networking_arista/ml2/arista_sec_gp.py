@@ -178,7 +178,7 @@ class AristaSecGroupSwitchDriver(object):
                 rule = 'icmp_custom3'
             elif from_port is not None and to_port is not None:
                 rule = 'icmp_custom2'
-            elif from_port and to_port is None:
+            elif from_port is not None and to_port is None:
                 rule = 'icmp_custom1'
             else:
                 msg = _('Invalid ICMP rule specified')

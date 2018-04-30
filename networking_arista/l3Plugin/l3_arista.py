@@ -247,7 +247,7 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
         routers = super(AristaL3ServicePlugin, self).get_routers(ctx)
         for r in routers:
             tenant_id = r['tenant_id']
-            ports = self.ndb.get_all_ports_for_tenant(tenant_id)
+            ports = self.ndb.get_all_ports_for_tenant(ctxt, tenant_id)
 
             try:
                 self.driver.create_router(self, tenant_id, r)

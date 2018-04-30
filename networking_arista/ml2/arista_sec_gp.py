@@ -858,7 +858,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
         return '-'.join(['SG', in_out, name])
 
-    def perform_sync_of_sg(self):
+    def perform_sync_of_sg(self, context):
         """Perform sync of the security groups between ML2 and EOS.
 
         This is unconditional sync to ensure that all security
@@ -870,12 +870,14 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         if not self.sg_enabled:
             return
 
+        return
+
         self._maintain_connections()
 
-        arista_ports = db_lib.get_ports()
+        arista_ports = db_lib.get_ports(context)
         arista_port_ids = set(arista_ports.iterkeys())
-        sg_bindings = self._ndb.get_all_security_gp_to_port_bindings(filters={'port_id': arista_port_ids})
-        neutron_sgs = self._ndb.get_security_groups(
+        sg_bindings = self._ndb.get_all_security_gp_to_port_bindings(context, filters={'port_id': arista_port_ids})
+        neutron_sgs = self._ndb.get_security_groups(context,
             filters={'id': set(binding['security_group_id'] for binding in sg_bindings)}
         )
 
@@ -939,7 +941,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
         # Get Baremetal port profiles, if any
         ports_by_switch = collections.defaultdict(dict)
-        for bm in six.itervalues(db_lib.get_all_baremetal_ports()):
+        for bm in six.itervalues(db_lib.get_all_baremetal_ports(context)):
             sgs = sgs_dict.get(bm['port_id'], [])
             profile = json.loads(bm['profile'])
             link_info = profile['local_link_information']

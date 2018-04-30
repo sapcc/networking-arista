@@ -501,10 +501,10 @@ class AristaSecGroupSwitchDriver(object):
         if existing_acls is not None:
             for item in six.itervalues(existing_acls):
                 for acl in item.get(self._arista_acl_name(security_group_id, 'ingress'), []):
-                    if acl['text'] not in self.aclCreateDict['create']:
+                    if 'action' in acl and acl['text'] not in self.aclCreateDict['create']:
                         known_ingress.add(acl['text'])
                 for acl in item.get(self._arista_acl_name(security_group_id, 'egress'), []):
-                    if acl['text'] not in self.aclCreateDict['create']:
+                    if 'action' in acl and acl['text'] not in self.aclCreateDict['create']:
                         known_egress.add(acl['text'])
 
         in_cmds, out_cmds = self._create_acl_shell(security_group_id)

@@ -22,6 +22,7 @@ from oslo_config import cfg
 
 from neutron.common import constants as n_const
 import neutron.db.api as db
+import neutron.context as neutron_context
 from neutron.extensions import portbindings
 from neutron.plugins.ml2 import driver_api as api
 from neutron.tests import base
@@ -49,25 +50,31 @@ def setup_valid_config():
 
 
 class AristaProvisionedVlansStorageTestCase(testlib_api.SqlTestCase):
-    """Test storing and retriving functionality of Arista mechanism driver.
+    """Test storing and retrieving functionality of Arista mechanism driver.
 
     Tests all methods of this class by invoking them separately as well
     as a group.
     """
 
+    def setUp(self):
+        super(AristaProvisionedVlansStorageTestCase, self).setUp()
+        self.admin_ctx = neutron_context.get_admin_context()
+
     def test_tenant_is_remembered(self):
         tenant_id = 'test'
 
-        db_lib.remember_tenant(tenant_id)
-        net_provisioned = db_lib.is_tenant_provisioned(tenant_id)
+        db_lib.remember_tenant(self.admin_ctx, tenant_id)
+        net_provisioned = db_lib.is_tenant_provisioned(self.admin_ctx,
+                                                       tenant_id)
         self.assertTrue(net_provisioned, 'Tenant must be provisioned')
 
     def test_tenant_is_removed(self):
         tenant_id = 'test'
 
-        db_lib.remember_tenant(tenant_id)
-        db_lib.forget_tenant(tenant_id)
-        net_provisioned = db_lib.is_tenant_provisioned(tenant_id)
+        db_lib.remember_tenant(self.admin_ctx, tenant_id)
+        db_lib.forget_tenant(self.admin_ctx, tenant_id)
+        net_provisioned = db_lib.is_tenant_provisioned(self.admin_ctx,
+                                                       tenant_id)
         self.assertFalse(net_provisioned, 'The Tenant should be deleted')
 
     def test_network_is_remembered(self):
@@ -76,9 +83,11 @@ class AristaProvisionedVlansStorageTestCase(testlib_api.SqlTestCase):
         segmentation_id = 456
         segment_id = 'segment_id_%s' % segmentation_id
 
-        db_lib.remember_network_segment(tenant_id, network_id, segmentation_id,
+        db_lib.remember_network_segment(self.admin_ctx,
+                                        tenant_id, network_id, segmentation_id,
                                         segment_id)
-        net_provisioned = db_lib.is_network_provisioned(tenant_id,
+        net_provisioned = db_lib.is_network_provisioned(self.admin_ctx,
+                                                        tenant_id,
                                                         network_id)
         self.assertTrue(net_provisioned, 'Network must be provisioned')
 
@@ -87,10 +96,13 @@ class AristaProvisionedVlansStorageTestCase(testlib_api.SqlTestCase):
         network_id = '123'
         segment_id = 'segment_id_1'
 
-        db_lib.remember_network_segment(tenant_id, network_id, '123',
+        db_lib.remember_network_segment(self.admin_ctx,
+                                        tenant_id, network_id, '123',
                                         segment_id)
-        db_lib.forget_network_segment(tenant_id, network_id)
-        net_provisioned = db_lib.is_network_provisioned(tenant_id, network_id)
+        db_lib.forget_network_segment(self.admin_ctx,
+                                      tenant_id, network_id)
+        net_provisioned = db_lib.is_network_provisioned(self.admin_ctx,
+                                                        tenant_id, network_id)
         self.assertFalse(net_provisioned, 'The network should be deleted')
 
     def test_vm_is_remembered(self):
@@ -100,8 +112,10 @@ class AristaProvisionedVlansStorageTestCase(testlib_api.SqlTestCase):
         port_id = 456
         host_id = 'ubuntu1'
 
-        db_lib.remember_vm(vm_id, host_id, port_id, network_id, tenant_id)
-        vm_provisioned = db_lib.is_vm_provisioned(vm_id, host_id, port_id,
+        db_lib.remember_vm(self.admin_ctx,
+                           vm_id, host_id, port_id, network_id, tenant_id)
+        vm_provisioned = db_lib.is_vm_provisioned(self.admin_ctx,
+                                                  vm_id, host_id, port_id,
                                                   network_id, tenant_id)
         self.assertTrue(vm_provisioned, 'VM must be provisioned')
 
@@ -112,9 +126,12 @@ class AristaProvisionedVlansStorageTestCase(testlib_api.SqlTestCase):
         port_id = 456
         host_id = 'ubuntu1'
 
-        db_lib.remember_vm(vm_id, host_id, port_id, network_id, tenant_id)
-        db_lib.forget_port(port_id, host_id)
-        vm_provisioned = db_lib.is_vm_provisioned(vm_id, host_id, port_id,
+        db_lib.remember_vm(self.admin_ctx,
+                           vm_id, host_id, port_id, network_id, tenant_id)
+        db_lib.forget_port(self.admin_ctx,
+                           port_id, host_id)
+        vm_provisioned = db_lib.is_vm_provisioned(self.admin_ctx,
+                                                  vm_id, host_id, port_id,
                                                   network_id, tenant_id)
         self.assertFalse(vm_provisioned, 'The vm should be deleted')
 
@@ -124,10 +141,12 @@ class AristaProvisionedVlansStorageTestCase(testlib_api.SqlTestCase):
         segment_id = 'segment_%s'
         nets = ['id%s' % n for n in range(expected_num_nets)]
         for net_id in nets:
-            db_lib.remember_network_segment(tenant_id, net_id, 123,
+            db_lib.remember_network_segment(self.admin_ctx,
+                                            tenant_id, net_id, 123,
                                             segment_id % net_id)
 
-        num_nets_provisioned = db_lib.num_nets_provisioned(tenant_id)
+        num_nets_provisioned = db_lib.num_nets_provisioned(self.admin_ctx,
+                                                           tenant_id)
         self.assertEqual(expected_num_nets, num_nets_provisioned,
                          'There should be %d nets, not %d' %
                          (expected_num_nets, num_nets_provisioned))
@@ -135,16 +154,18 @@ class AristaProvisionedVlansStorageTestCase(testlib_api.SqlTestCase):
     def test_removes_all_networks(self):
         tenant_id = 'test'
         num_nets = 100
-        old_nets = db_lib.num_nets_provisioned(tenant_id)
+        old_nets = db_lib.num_nets_provisioned(self.admin_ctx, tenant_id)
         nets = ['id_%s' % n for n in range(num_nets)]
         segment_id = 'segment_%s'
         for net_id in nets:
-            db_lib.remember_network_segment(tenant_id, net_id, 123,
+            db_lib.remember_network_segment(self.admin_ctx,
+                                            tenant_id, net_id, 123,
                                             segment_id % net_id)
         for net_id in nets:
-            db_lib.forget_network_segment(tenant_id, net_id)
+            db_lib.forget_network_segment(self.admin_ctx, tenant_id, net_id)
 
-        num_nets_provisioned = db_lib.num_nets_provisioned(tenant_id)
+        num_nets_provisioned = db_lib.num_nets_provisioned(self.admin_ctx,
+                                                           tenant_id)
         expected = old_nets
         self.assertEqual(expected, num_nets_provisioned,
                          'There should be %d nets, not %d' %
@@ -154,9 +175,9 @@ class AristaProvisionedVlansStorageTestCase(testlib_api.SqlTestCase):
         expected_num_tenants = 100
         tenants = ['id%s' % n for n in range(expected_num_tenants)]
         for tenant_id in tenants:
-            db_lib.remember_tenant(tenant_id)
+            db_lib.remember_tenant(self.admin_ctx, tenant_id)
 
-        num_tenants_provisioned = db_lib.num_provisioned_tenants()
+        num_tenants_provisioned = db_lib.num_provisioned_tenants(self.admin_ctx)
         self.assertEqual(expected_num_tenants, num_tenants_provisioned,
                          'There should be %d tenants, not %d' %
                          (expected_num_tenants, num_tenants_provisioned))
@@ -165,11 +186,11 @@ class AristaProvisionedVlansStorageTestCase(testlib_api.SqlTestCase):
         num_tenants = 100
         tenants = ['id%s' % n for n in range(num_tenants)]
         for tenant_id in tenants:
-            db_lib.remember_tenant(tenant_id)
+            db_lib.remember_tenant(self.admin_ctx, tenant_id)
         for tenant_id in tenants:
-            db_lib.forget_tenant(tenant_id)
+            db_lib.forget_tenant(self.admin_ctx, tenant_id)
 
-        num_tenants_provisioned = db_lib.num_provisioned_tenants()
+        num_tenants_provisioned = db_lib.num_provisioned_tenants(self.admin_ctx)
         expected = 0
         self.assertEqual(expected, num_tenants_provisioned,
                          'There should be %d tenants, not %d' %
@@ -186,19 +207,20 @@ class AristaProvisionedVlansStorageTestCase(testlib_api.SqlTestCase):
 
         for vm in vm_to_remember:
             port_id = port_id_base + vm
-            db_lib.remember_vm(vm, host_id, port_id, network_id, tenant_id)
+            db_lib.remember_vm(self.admin_ctx,
+                               vm, host_id, port_id, network_id, tenant_id)
         for vm in vm_to_forget:
             port_id = port_id_base + vm
-            db_lib.forget_port(port_id, host_id)
+            db_lib.forget_port(self.admin_ctx, port_id, host_id)
 
-        num_vms = len(db_lib.get_vms(tenant_id))
+        num_vms = len(db_lib.get_vms(self.admin_ctx, tenant_id))
         expected = len(vm_to_remember) - len(vm_to_forget)
 
         self.assertEqual(expected, num_vms,
                          'There should be %d records, '
                          'got %d records' % (expected, num_vms))
         # clean up afterwards
-        db_lib.forget_port(port_id, host_id)
+        db_lib.forget_port(self.admin_ctx, port_id, host_id)
 
     def test_get_network_list_returns_eos_compatible_data(self):
         tenant = u'test-1'
@@ -220,12 +242,12 @@ class AristaProvisionedVlansStorageTestCase(testlib_api.SqlTestCase):
                                                u'segmentationTypeId': vlan2_id,
                                                u'segmentationType': segm_type}}
 
-        db_lib.remember_network_segment(tenant,
+        db_lib.remember_network_segment(self.admin_ctx, tenant,
                                         network_id, vlan_id, segment_id1)
-        db_lib.remember_network_segment(tenant,
+        db_lib.remember_network_segment(self.admin_ctx, tenant,
                                         network2_id, vlan2_id, segment_id2)
 
-        net_list = db_lib.get_networks(tenant)
+        net_list = db_lib.get_networks(self.admin_ctx, tenant)
         self.assertEqual(net_list, expected_eos_net_list, ('%s != %s' %
                          (net_list, expected_eos_net_list)))
 
@@ -1186,9 +1208,10 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
         create_ports = {}
         for port in port_list:
             create_ports.update(port_dict_representation(port))
-
+        context = neutron_context.get_admin_context()
         self.drv.cli_commands[arista_ml2.CMD_INSTANCE] = 'instance'
-        self.drv.create_instance_bulk(tenant_id, create_ports, devices,
+        self.drv.create_instance_bulk(context,
+                                      tenant_id, create_ports, devices,
                                       bm_port_profiles=None)
         cmd1 = ['show openstack agent uuid']
         cmd2 = ['enable',
@@ -1473,7 +1496,8 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
             create_ports.update(port_dict_representation(port))
 
         self.drv.cli_commands[arista_ml2.CMD_INSTANCE] = 'instance'
-        self.drv.create_instance_bulk(tenant_id, create_ports, devices,
+        context = neutron_context.get_admin_context()
+        self.drv.create_instance_bulk(context, tenant_id, create_ports, devices,
                                       bm_port_profiles=None, sync=True)
         cmd1 = ['show openstack agent uuid']
         cmd2 = ['enable',
@@ -1761,6 +1785,7 @@ class FakeNetworkContext(object):
         self.is_admin = False
         self.tenant_id = network['tenant_id']
         self.session = db.get_session()
+        self._plugin_context = FakePluginContext(self.tenant_id)
 
     @property
     def current(self):
@@ -1960,7 +1985,7 @@ class SyncServiceTest(testlib_api.SqlTestCase):
 
         # If the timestamps do match, then the sync should not be executed.
         expected_calls = [
-            mock.call.perform_sync_of_sg(),
+            mock.call.perform_sync_of_sg(self.context),
             mock.call.check_cvx_availability(),
             mock.call.get_region_updated_time(),
         ]

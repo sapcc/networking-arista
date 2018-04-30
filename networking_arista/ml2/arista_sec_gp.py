@@ -54,6 +54,8 @@ acl_cmd = { # For a rule 0: protocol, 1: cidr, 2: from_port, 3: to_port, 4: flag
             'out_icmp_custom1': ['permit icmp any {0} {1}'],
             'in_icmp_custom2': ['permit icmp {0} any {1} {2}'],
             'out_icmp_custom2': ['permit icmp any {0} {1} {2}'],
+            'in_icmp_custom3': ['permit icmp {0} any'],
+            'out_icmp_custom3': ['permit icmp any {0}'],
             'default': [],
             'delete_acl': ['no ip access-list {0}'],
             'del_in_icmp_custom1': ['ip access-list {0}',
@@ -172,10 +174,11 @@ class AristaSecGroupSwitchDriver(object):
 
         if protocol == 'icmp':
             # ICMP rules require special processing
-            if ((from_port and to_port) or
-               (not from_port and not to_port)):
+            if from_port is None and to_port is None:
+                rule = 'icmp_custom3'
+            elif from_port is not None and to_port is not None:
                 rule = 'icmp_custom2'
-            elif from_port and not to_port:
+            elif from_port and to_port is None:
                 rule = 'icmp_custom1'
             else:
                 msg = _('Invalid ICMP rule specified')
@@ -194,9 +197,6 @@ class AristaSecGroupSwitchDriver(object):
                 from_port = 0
             if not to_port:
                 to_port = 0
-
-            from_port = self._get_port_name(from_port, protocol)
-            to_port = self._get_port_name(to_port, protocol)
 
             for c in acl_dict:
                 if rule == 'icmp_custom2':
@@ -374,12 +374,12 @@ class AristaSecGroupSwitchDriver(object):
 
             remote_ips = security_group_ips[remote_group_id]
 
-        min_port = sgr['port_range_min']
-        if not min_port:
-            min_port = 0
-
         for remote_ip in remote_ips:
             for protocol in protocols:
+                min_port = sgr['port_range_min']
+                if protocol != 'icmp' and not min_port:
+                    min_port = 0
+
                 max_port = sgr['port_range_max']
                 if not max_port and protocol != 'icmp':
                     max_port = 65535

@@ -422,13 +422,14 @@ class AristaSecGroupSwitchDriver(object):
 
         cmds.append('exit')
 
-        for s in six.itervalues(self._server_by_id):
+        for server_id, s in six.iteritems(self._server_by_id):
             try:
                 self._run_openstack_sg_cmds(cmds, s)
-            except Exception:
-                msg = (_('Failed to create ACL rule on EOS %s') % s)
-                LOG.exception(msg)
-                raise arista_exc.AristaSecurityGroupError(msg=msg)
+            except Exception as e:
+                msg = (_('Failed to create ACL rule on EOS %s') %
+                       (server_id, e))
+                LOG.info(msg)
+                # raise arista_exc.AristaSecurityGroupError(msg=msg)
 
     def delete_acl_rule(self, sgr):
         """Deletes an ACL rule on Arista Switch.
@@ -463,7 +464,7 @@ class AristaSecGroupSwitchDriver(object):
             max_port = sgr['port_range_max']
             if not max_port and protocol != 'icmp':
                 max_port = 65535
-            for s in six.itervalues(self._server_by_id):
+            for server_id, s in six.iteritems(self._server_by_id):
                 try:
                     self._delete_acl_rule_from_eos(name,
                                                    sgr['protocol'],
@@ -472,10 +473,11 @@ class AristaSecGroupSwitchDriver(object):
                                                    max_port,
                                                    sgr['direction'],
                                                    s)
-                except Exception:
-                    msg = (_('Failed to delete ACL on EOS %s') % s)
-                    LOG.exception(msg)
-                    raise arista_exc.AristaSecurityGroupError(msg=msg)
+                except Exception as e:
+                    msg = (_('Failed to delete ACL on EOS %s (%s)') %
+                            (server_id, e))
+                    LOG.debug(msg)
+                    # raise arista_exc.AristaSecurityGroupError(msg=msg)
 
     def _create_acl_shell(self, sg_id):
         """Creates an ACL on Arista Switch.

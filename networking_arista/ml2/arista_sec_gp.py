@@ -25,7 +25,6 @@ from socket import error as socket_error
 
 import jsonrpclib
 import six
-from datadog.dogstatsd import DogStatsd
 from netaddr import EUI, IPSet, IPNetwork
 from oslo_config import cfg
 from oslo_log import log as logging

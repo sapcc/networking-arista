@@ -634,7 +634,7 @@ class AristaSecGroupSwitchDriver(object):
             except Exception as error:
                 msg = (_('Failed to create ACL on EOS %s: %s') % (server_id, error.message))
                 LOG.exception(msg)
-                raise arista_exc.AristaSecurityGroupError(msg=msg)
+                # raise arista_exc.AristaSecurityGroupError(msg=msg)
 
     def delete_acl(self, sg):
         """Deletes an ACL from Arista Switch.
@@ -748,7 +748,7 @@ class AristaSecGroupSwitchDriver(object):
             ret = server.runCmds(version=1, cmds=full_command)
             LOG.debug(_LI('Results of execution on Arista EOS: %s'), ret)
 
-        except Exception as e:
+        except Exception:
             msg = (_('Error occurred while trying to execute '
                      'commands %(cmd)s: %(error)') %
                    {'cmd': full_command, 'error': e.message})

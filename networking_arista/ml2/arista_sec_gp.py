@@ -612,7 +612,7 @@ class AristaSecGroupSwitchDriver(object):
         # Create per server diff and apply
         for server_id, s in six.iteritems(self._server_by_id):
             server_diff = cmds.copy()
-            for dir in DIRECTIONS:
+            for d, dir in enumerate(DIRECTIONS):
                 tags = ['server.id:' + str(server_id), 'security.group:' + sg['id'],
                         'project.id:' + sg['tenant_id'], 'direction:' + dir
                         ]
@@ -626,7 +626,6 @@ class AristaSecGroupSwitchDriver(object):
                     ], cmds[dir])
 
                 if len(server_diff[dir]) > 0:
-                    d = 0 if dir == 'ingress' else 1
                     server_diff[dir] = self._create_acl_shell(security_group_id)[d] + server_diff[dir] + ['exit']
             try:
                 if len(server_diff['ingress']) + len(server_diff['egress']) > 0:

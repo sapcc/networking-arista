@@ -247,10 +247,15 @@ def port_dict_representation(port):
 
 
 class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
-    def setUp(self):
+
+    @patch("jsonrpclib.Server")
+    def setUp(self, mock_json_server):
         super(TestAristaJSONRPCWrapper, self).setUp()
         setup_valid_config()
         ndb = db_lib.NeutronNets()
+        mock_arista = mock_json_server.return_value
+        mock_arista.runCmds.return_value = [{'chassisId':'01-23-45-67-89-01'}]
+
         self.drv = arista_ml2.AristaRPCWrapperJSON(ndb)
         self.drv._server_ip = "10.11.12.13"
         self.region = 'RegionOne'
@@ -871,10 +876,13 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
     Tests all methods used to send commands between Arista Driver and EOS
     """
 
-    def setUp(self):
+    @patch("jsonrpclib.Server")
+    def setUp(self, mock_json_server):
         super(PositiveRPCWrapperValidConfigTestCase, self).setUp()
         setup_valid_config()
         ndb = db_lib.NeutronNets()
+        mock_arista = mock_json_server.return_value
+        mock_arista.runCmds.return_value = [{'chassisId':'01-23-45-67-89-01'}]
         self.drv = arista_ml2.AristaRPCWrapperEapi(ndb)
         self.drv._server_ip = "10.11.12.13"
         self.region = 'RegionOne'
@@ -1565,7 +1573,12 @@ class NegativeRPCWrapperTestCase(testlib_api.SqlTestCase):
         super(NegativeRPCWrapperTestCase, self).setUp()
         setup_valid_config()
 
-    def test_exception_is_raised_on_json_server_error(self):
+    @patch("jsonrpclib.Server")
+    def test_exception_is_raised_on_json_server_error(self, mock_json_server):
+        # Mock for maintain_connections
+        mock_arista = mock_json_server.return_value
+        mock_arista.runCmds.return_value = [{'chassisId':'01-23-45-67-89-01'}]
+
         ndb = db_lib.NeutronNets()
         drv = arista_ml2.AristaRPCWrapperEapi(ndb)
 

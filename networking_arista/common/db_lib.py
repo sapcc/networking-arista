@@ -89,7 +89,7 @@ def remember_vm(vm_id, host_id, port_id, network_id, tenant_id):
 
 
 def forget_all_ports_for_network(net_id):
-    """Removes all ports for a given network fron repository.
+    """Removes all ports for a given network from repository.
 
     :param net_id: globally unique network ID
     """

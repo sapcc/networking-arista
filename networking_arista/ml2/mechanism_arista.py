@@ -20,7 +20,7 @@ from oslo_service import loopingcall
 from oslo_log import log as logging
 
 from neutron.common import constants as n_const
-from neutron.db import securitygroups_db as sg_db
+from neutron.db import securitygroups_db as sg_db, models_v2
 from neutron.extensions import portbindings
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2 import driver_api
@@ -969,18 +969,22 @@ class AristaDriver(driver_api.MechanismDriver):
 
     def _cleanup_db(self):
         """Clean up any unnecessary entries in our DB."""
-        neutron_nets = self.ndb.get_all_networks()
-        arista_db_nets = db_lib.get_networks(tenant_id='any')
-        neutron_net_ids = set()
-        for net in neutron_nets:
-            neutron_net_ids.add(net['id'])
 
-        # Remove networks from the Arista DB if the network does not exist in
-        # Neutron DB
-        for net_id in set(arista_db_nets.keys()).difference(neutron_net_ids):
-            tenant_network = arista_db_nets[net_id]
-            db_lib.forget_network_segment(tenant_network['tenantId'], net_id)
-            db_lib.forget_all_ports_for_network(net_id)
+        session = self.ndb.admin_ctx.session
+        with session.begin():
+            arista_vms = db.AristaProvisionedVms
+            arista_nets = db.AristaProvisionedNets
+
+            missing_nets = \
+                session.query(arista_nets.network_id).\
+                    outerjoin(models_v2.Network,
+                    models_v2.Network.id == arista_nets.network_id
+                ).filter(models_v2.Network.id.is_(None)).subquery()
+
+            session.query(arista_vms).\
+                filter(arista_vms.network_id.in_(missing_nets)).delete(False)
+            session.query(arista_nets).\
+                filter(arista_nets.network_id.in_(missing_nets)).delete(False)
 
     def _network_provisioned(self, tenant_id, network_id,
                              segmentation_id=None, segment_id=None):

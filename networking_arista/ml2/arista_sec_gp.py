@@ -29,10 +29,23 @@ from datadog.dogstatsd import DogStatsd
 from netaddr import EUI, IPSet, IPNetwork
 from oslo_config import cfg
 from oslo_log import log as logging
+from oslo_utils.importutils import try_import
 
 from networking_arista._i18n import _, _LI
 from networking_arista.common import db_lib
 from networking_arista.common import exceptions as arista_exc
+
+dogstatsd = try_import('datadog.dogstatsd')
+
+if not dogstatsd or os.getenv('STATSD_MOCK', False):
+    from mock import Mock
+    STATS = Mock()
+else:
+    STATS = dogstatsd.DogStatsd(host=os.getenv('STATSD_HOST', 'localhost'),
+                      port=int(os.getenv('STATSD_PORT', 9125)),
+                      namespace=os.getenv('STATSD_PREFIX', 'openstack')
+                      )
+
 
 LOG = logging.getLogger(__name__)
 
@@ -108,11 +121,7 @@ class AristaSecGroupSwitchDriver(object):
         self.sg_enabled = cfg.CONF.ml2_arista.get('sec_group_support')
         self._validate_config()
         self._maintain_connections()
-        self._statsd = DogStatsd(
-            host=os.getenv('STATSD_HOST', 'localhost'),
-            port=int(os.getenv('STATSD_PORT', '8125')),
-            namespace=os.getenv('STATSD_PREFIX', 'openstack')
-        )
+        self._statsd = STATS
         self.max_rules = cfg.CONF.ml2_arista.get('consolidation_limit')
 
         self.aclCreateDict = acl_cmd['acl']

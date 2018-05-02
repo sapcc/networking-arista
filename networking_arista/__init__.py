@@ -13,11 +13,16 @@
 # under the License.
 
 import gettext
-
 import pbr.version
+import six
 
 
 __version__ = pbr.version.VersionInfo(
     'networking_arista').version_string()
 
-gettext.install('networking_arista', unicode=1)
+_gettext_kwargs = {}
+
+if six.PY2:
+    _gettext_kwargs['unicode'] = True
+
+gettext.install('networking_arista', **_gettext_kwargs)

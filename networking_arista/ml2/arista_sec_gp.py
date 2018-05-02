@@ -556,7 +556,7 @@ class AristaSecGroupSwitchDriver(object):
             try:
                 self._run_openstack_sg_cmds(in_cmds + out_cmds, s)
             except Exception:
-                msg = (_('Failed to create ACL on EOS %s') % s)
+                msg = (_('Failed to create ACL on EOS %s') % server_id)
                 LOG.exception(msg)
                 raise arista_exc.AristaSecurityGroupError(msg=msg)
 

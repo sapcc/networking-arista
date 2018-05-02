@@ -54,6 +54,7 @@ EOS_UNREACHABLE_MSG = _('Unable to reach EOS')
 SUPPORTED_SG_PROTOCOLS = ['tcp', 'udp', 'icmp', 'dhcp', None]
 
 DIRECTIONS = ['ingress', 'egress']
+INTERFACE_DIRECTIONS = ['configuredEgressIntfs', 'configuredIngressIntfs']
 
 acl_cmd = { # For a rule 0: protocol, 1: cidr, 2: from_port, 3: to_port, 4: flags
     'acl': {'create': ['ip access-list {0}',
@@ -815,15 +816,27 @@ class AristaSecGroupSwitchDriver(object):
                 all_sgs.add(tuple(sorted(sgs)))
 
         existing_acls = dict()
+        active_acls = dict()
         for server_id, server in six.iteritems(self._server_by_id):
+            active_acls_per_port = defaultdict(lambda: [None, None])
+            active_acls[server_id] = active_acls_per_port
             try:
-                res = server.runCmds(version=1, cmds=['show ip access-lists'])
+                acls, summary = server.runCmds(
+                    version=1,
+                    cmds=['show ip access-lists',
+                          'show ip access-lists summary'])
                 existing_acls[server_id] = {
                     acl['name']: acl['sequence']
-                    for acl in res[0]['aclList']
+                    for acl in acls['aclList']
                     if acl['name'].startswith('SG-')
                 }
-            except Exception:
+                for acl_list in summary['aclList']:
+                    acl_name = acl_list['name']
+                    for i, dir in enumerate(INTERFACE_DIRECTIONS):
+                        for interface in acl_list[dir]:
+                            if_name = interface['name']
+                            active_acls_per_port[if_name][i] = acl_name
+            except HTTPException:
                 existing_acls[server_id] = {}
 
         # Create the ACLs on Arista Switches
@@ -859,15 +872,18 @@ class AristaSecGroupSwitchDriver(object):
                 if not l:
                     # skip all empty entries
                     continue
-                ports_by_switch[l.get('switch_info'), l.get('switch_id')][l['port_id']] = sgs
+                switch = (l.get('switch_info'), l.get('switch_id'))
+                ports_by_switch[switch][l['port_id']] = sgs
 
-        for (switch_info, switch_id), port_security_groups in six.iteritems(ports_by_switch):
-            server = self._get_server(switch_info, switch_id)
+        for switch, port_security_groups in six.iteritems(ports_by_switch):
+            server = self._get_server(*switch)
             if server is None:
                 continue
             try:
-                ret = server.runCmds(version=1,
-                                     cmds=["show interfaces " + ",".join(port_security_groups.iterkeys())])[0]
+                ret = server.runCmds(
+                    version=1,
+                    cmds=["show interfaces " +
+                          ",".join(port_security_groups.iterkeys())])[0]
                 for k, v in six.iteritems(ret['interfaces']):
                     pc = None
                     membership = v.get('interfaceMembership')
@@ -881,8 +897,14 @@ class AristaSecGroupSwitchDriver(object):
                 LOG.exception(msg)
                 continue
 
+            acl_on_server = active_acls[server_id]
             for port_id, sgs in six.iteritems(port_security_groups):
                 if sgs:
+                    acl_on_port = acl_on_server[port_id]
+                    if all(acl_on_port[i] == self._arista_acl_name(sgs, dir)
+                           for i, dir in enumerate(DIRECTIONS)):
+                        continue
+
                     self.apply_acl(sgs, server=server, port_id=port_id)
                 else:
                     try:

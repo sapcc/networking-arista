@@ -435,7 +435,7 @@ class AristaSecGroupSwitchDriver(object):
             try:
                 self._run_openstack_sg_cmds(cmds, s)
             except Exception as e:
-                msg = (_('Failed to create ACL rule on EOS %s') %
+                msg = (_('Failed to create ACL rule on EOS %s due to %s') %
                        (server_id, e))
                 LOG.debug(msg)
 
@@ -748,7 +748,7 @@ class AristaSecGroupSwitchDriver(object):
             ret = server.runCmds(version=1, cmds=full_command)
             LOG.debug(_LI('Results of execution on Arista EOS: %s'), ret)
 
-        except Exception:
+        except Exception as e:
             msg = (_('Error occurred while trying to execute '
                      'commands %(cmd)s: %(error)') %
                    {'cmd': full_command, 'error': e.message})

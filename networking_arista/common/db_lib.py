@@ -589,8 +589,3 @@ class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,
             for s in sgs:
                 sgs_all[s['id']] = s
         return sgs_all
-
-    def get_security_group_rule(self, sec_gpr_id):
-        return super(NeutronNets,
-                     self).get_security_group_rule(self.admin_ctx,
-                                                   sec_gpr_id) or []

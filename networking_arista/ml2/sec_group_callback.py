@@ -38,66 +38,61 @@ class AristaSecurityGroupHandler(object):
         self.subscribe()
 
     @log_helpers.log_method_call
-    def create_security_group(self, resource, event, trigger, **kwargs):
-        sg = kwargs.get('security_group')
+    def create_security_group(self, resource, event, trigger, context=None, security_group=None, **kwargs):
         try:
-            self.client.create_security_group(sg)
+            self.client.create_security_group(context, security_group)
         except Exception as e:
             with excutils.save_and_reraise_exception():
                 LOG.error(_LE("Failed to create a security group %(sg_id)s "
                               "in Arista Driver: %(err)s"),
-                          {"sg_id": sg["id"], "err": e})
+                          {"sg_id": security_group["id"], "err": e})
                 try:
-                    self.client.delete_security_group(sg)
+                    self.client.delete_security_group(context, security_group)
                 except Exception:
                     LOG.exception(_LE("Failed to delete security group %s"),
-                                  sg['id'])
+                                  security_group['id'])
 
     @log_helpers.log_method_call
-    def delete_security_group(self, resource, event, trigger, **kwargs):
-        sg = kwargs.get('security_group')
+    def delete_security_group(self, resource, event, trigger, context=None, security_group=None, **kwargs):
         try:
-            self.client.delete_security_group(sg)
+            self.client.delete_security_group(context, security_group)
         except Exception as e:
             LOG.error(_LE("Failed to delete security group %(sg_id)s "
                           "in Arista Driver: %(err)s"),
-                      {"sg_id": sg["id"], "err": e})
+                      {"sg_id": security_group["id"], "err": e})
 
     @log_helpers.log_method_call
-    def update_security_group(self, resource, event, trigger, **kwargs):
-        sg = kwargs.get('security_group')
+    def update_security_group(self, resource, event, trigger, context=None, security_group=None, **kwargs):
         try:
-            self.client.update_security_group(sg)
+            self.client.update_security_group(context, security_group)
         except Exception as e:
             LOG.error(_LE("Failed to update security group %(sg_id)s "
                           "in Arista Driver: %(err)s"),
-                      {"sg_id": sg["id"], "err": e})
+                      {"sg_id": security_group["id"], "err": e})
 
     @log_helpers.log_method_call
-    def create_security_group_rule(self, resource, event, trigger, **kwargs):
-        sgr = kwargs.get('security_group_rule')
+    def create_security_group_rule(self, resource, event, trigger, context=None, security_group_rule=None, **kwargs):
         try:
-            self.client.create_security_group_rule(sgr)
+            self.client.create_security_group_rule(context, security_group_rule)
         except Exception as e:
             with excutils.save_and_reraise_exception():
                 LOG.error(_LE("Failed to create a security group %(sgr_id)s "
                               "rule in Arista Driver: %(err)s"),
-                          {"sgr_id": sgr["id"], "err": e})
+                          {"sgr_id": security_group_rule['id'], "err": e})
                 try:
-                    self.client.delete_security_group_rule(sgr)
+                    self.client.delete_security_group_rule(context, security_group_rule['id'])
                 except Exception:
                     LOG.exception(_LE("Failed to delete security group "
-                                      "rule %s"), sgr['id'])
+                                      "rule %s"), security_group_rule['id'])
 
     @log_helpers.log_method_call
-    def delete_security_group_rule(self, resource, event, trigger, **kwargs):
-        sgr_id = kwargs.get('security_group_rule_id')
+    def delete_security_group_rule(self, resource, event, trigger, context=None, security_group_rule_id=None, **kwargs):
         try:
-            self.client.delete_security_group_rule(sgr_id)
+            self.client.delete_security_group_rule(context, security_group_rule_id)
         except Exception as e:
             LOG.error(_LE("Failed to delete security group %(sgr_id)s "
                           "rule in Arista Driver: %(err)s"),
-                      {"sgr_id": sgr_id, "err": e})
+                      {"sgr_id": security_group_rule_id, "err": e})
 
     def subscribe(self):
         # Subscribe to the events related to security groups and rules

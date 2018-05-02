@@ -20,10 +20,11 @@ from oslo_service import loopingcall
 from oslo_log import log as logging
 
 from neutron.common import constants as n_const
+from neutron.db import securitygroups_db as sg_db
 from neutron.extensions import portbindings
 from neutron.plugins.common import constants as p_const
-from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import driver_api
+from neutron.plugins.ml2.common import exceptions as ml2_exc
 
 from networking_arista._i18n import _, _LI, _LE
 from networking_arista.common import config  # noqa
@@ -62,12 +63,7 @@ class AristaDriver(driver_api.MechanismDriver):
     provisioned before for the given port.
     """
     def __init__(self, rpc=None):
-
         self.ndb = db_lib.NeutronNets()
-        self.db_nets = db.AristaProvisionedNets()
-        self.db_vms = db.AristaProvisionedVms()
-        self.db_tenants = db.AristaProvisionedTenants()
-
         confg = cfg.CONF.ml2_arista
         self.segmentation_type = db_lib.VLAN_SEGMENTATION
         self.timer = loopingcall.FixedIntervalLoopingCall(self._synchronization_thread)
@@ -100,9 +96,12 @@ class AristaDriver(driver_api.MechanismDriver):
         self.sg_handler = None
 
     def initialize(self):
-        if self.rpc.check_cvx_availability():
-            self.rpc.register_with_eos()
-            self.rpc.check_supported_features()
+        try:
+            if self.rpc.check_cvx_availability():
+                self.rpc.register_with_eos()
+                self.rpc.check_supported_features()
+        except arista_exc.AristaRpcError as e:
+            LOG.exception("Failed to register with eos")
 
         self._cleanup_db()
         # Registering with EOS updates self.rpc.region_updated_time. Clear it
@@ -656,8 +655,8 @@ class AristaDriver(driver_api.MechanismDriver):
         sg = port['security_groups']
         orig_sg = orig_port['security_groups']
 
-        # pretty_log("update_port_postcommit: new", port)
-        # pretty_log("update_port_postcommit: orig", orig_port)
+        pretty_log("update_port_postcommit: new", port)
+        pretty_log("update_port_postcommit: orig", orig_port)
 
         # Check if it is port migration case
         if self._handle_port_migration_postcommit(context):
@@ -994,7 +993,16 @@ class AristaDriver(driver_api.MechanismDriver):
             self.ndb.get_shared_network_owner_id(network_id)
         )
 
-    def create_security_group(self, sg):
+    def create_security_group(self, context, sg):
+        pass
+
+    def delete_security_group(self, context, sg):
+        pass
+
+    def update_security_group(self, context, sg):
+        if not self._is_security_group_used(context, sg['id']):
+            return
+
         try:
             self.rpc.create_acl(sg)
         except Exception:
@@ -1002,23 +1010,10 @@ class AristaDriver(driver_api.MechanismDriver):
             LOG.exception(msg)
             raise arista_exc.AristaSecurityGroupError(msg=msg)
 
-    def delete_security_group(self, sg):
-        try:
-            self.rpc.delete_acl(sg)
-        except Exception:
-            msg = (_('Failed to create ACL on EOS %s') % sg)
-            LOG.exception(msg)
-            raise arista_exc.AristaSecurityGroupError(msg=msg)
+    def create_security_group_rule(self, context, sgr):
+        if not self._is_security_group_used(context, sgr['security_group_id']):
+            return
 
-    def update_security_group(self, sg):
-        try:
-            self.rpc.create_acl(sg)
-        except Exception:
-            msg = (_('Failed to create ACL on EOS %s') % sg)
-            LOG.exception(msg)
-            raise arista_exc.AristaSecurityGroupError(msg=msg)
-
-    def create_security_group_rule(self, sgr):
         try:
             self.rpc.create_acl_rule(sgr)
         except Exception:
@@ -1026,13 +1021,31 @@ class AristaDriver(driver_api.MechanismDriver):
             LOG.exception(msg)
             raise arista_exc.AristaSecurityGroupError(msg=msg)
 
-    def delete_security_group_rule(self, sgr_id):
-        if sgr_id:
-            sgr = self.ndb.get_security_group_rule(sgr_id)
-            if sgr:
-                try:
-                    self.rpc.delete_acl_rule(sgr)
-                except Exception:
-                    msg = (_('Failed to delete ACL rule on EOS %s') % sgr)
-                    LOG.exception(msg)
-                    raise arista_exc.AristaSecurityGroupError(msg=msg)
+    def delete_security_group_rule(self, context, sgr_id):
+        if not sgr_id:
+            return
+
+        sgr = self.ndb.get_security_group_rule(context, sgr_id)
+        if not sgr:
+            return
+
+        if not self._is_security_group_used(context, sgr['security_group_id']):
+            return
+
+        try:
+            self.rpc.delete_acl_rule(sgr)
+        except Exception:
+            msg = (_('Failed to delete ACL rule on EOS %s') % sgr)
+            LOG.exception(msg)
+            raise arista_exc.AristaSecurityGroupError(msg=msg)
+
+    @staticmethod
+    def _is_security_group_used(context, security_group_id):
+        sg_id = sg_db.SecurityGroupPortBinding.security_group_id
+        port_id = sg_db.SecurityGroupPortBinding.port_id
+
+        result = context.session.query(sg_id).filter(
+            sg_id == security_group_id).join(
+            db.AristaProvisionedVms, db.AristaProvisionedVms.port_id == port_id
+        ).first()
+        return result is not None

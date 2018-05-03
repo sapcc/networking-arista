@@ -625,7 +625,7 @@ class AristaSecGroupSwitchDriver(object):
                     server_diff[dir] = self._create_acl_diff([
                         acl['text'] for acl in existing_acls[server_id].get(acl_name, [])
                         if acl['text'] not in self.aclCreateDict['create']
-                    ], cmds[dir])
+                    ], list(cmds[dir]))
 
                 if len(server_diff[dir]) > 0:
                     server_diff[dir] = self._create_acl_shell(security_group_id)[d] + server_diff[dir] + ['exit']

@@ -1,6 +1,5 @@
 import math
-
-import jsonrpclib
+import os
 import mock
 from mock import patch
 from netaddr import EUI
@@ -28,7 +27,8 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
             if 'show lldp local-info management 1' == cmd:
                 ret.append({'chassisId': '01-23-45-67-89-01'})
             elif 'show ip access-lists' == cmd:
-                ret.append(json.load(open('./jsonrpc.json')))
+                cur_dir = os.path.dirname(os.path.realpath(__file__))
+                ret.append(json.load(open(cur_dir + '/jsonrpc.json')))
             elif 'show ip access-lists summary' == cmd:
                 ret.append({"aclList": [
                     {"name": "SG-IN-test_security_group",

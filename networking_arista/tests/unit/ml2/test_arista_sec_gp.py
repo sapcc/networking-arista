@@ -105,7 +105,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         self.assertEqual(1, self.mock_sg_cmds.call_count, "expected to be called once")
         self.assertIn('no permit tcp 192.168.0.1/30 any range ssh blackjack syn',
                       self.mock_sg_cmds.call_args[0][0], 'Excepted delete rule')
-        self.assertIn('permit udp 192.168.0.1/30 any range ssh blackjack ',
+        self.assertIn('permit udp 192.168.0.1/30 any range ssh blackjack',
                       self.mock_sg_cmds.call_args[0][0], 'Excepted new rule')
 
     def test_diff_alot_sgs(self):

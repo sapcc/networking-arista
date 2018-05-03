@@ -23,12 +23,21 @@ def setup_config():
 class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
     @staticmethod
     def run_cmds(cmds, version=0):
-        if 'show lldp local-info management 1' == cmds[0]:
-            return [{'chassisId': '01-23-45-67-89-01'}]
-        elif 'show ip access-lists' == cmds[0]:
-            return json.load(open('./jsonrpc.json'))
-        else:
-            return []
+        ret = []
+        for cmd in cmds:
+            if 'show lldp local-info management 1' == cmd:
+                ret.append({'chassisId': '01-23-45-67-89-01'})
+            elif 'show ip access-lists' == cmd:
+                ret.append(json.load(open('./jsonrpc.json')))
+            elif 'show ip access-lists summary' == cmd:
+                ret.append({"aclList": [
+                    {"name": "SG-IN-test_security_group",
+                     "configuredEgressIntfs": [],
+                     "configuredIngressIntfs": []}
+                ]})
+            else:
+                ret.append(None)
+        return ret
 
     def setUp(self):
         super(AristaSecGroupSwitchDriverTest, self).setUp()

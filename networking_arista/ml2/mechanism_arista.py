@@ -96,12 +96,9 @@ class AristaDriver(driver_api.MechanismDriver):
         self.sg_handler = None
 
     def initialize(self):
-        try:
-            if self.rpc.check_cvx_availability():
-                self.rpc.register_with_eos()
-                self.rpc.check_supported_features()
-        except arista_exc.AristaRpcError as e:
-            LOG.exception("Failed to register with eos")
+        if self.rpc.check_cvx_availability():
+            self.rpc.register_with_eos()
+            self.rpc.check_supported_features()
 
         self._cleanup_db()
         # Registering with EOS updates self.rpc.region_updated_time. Clear it

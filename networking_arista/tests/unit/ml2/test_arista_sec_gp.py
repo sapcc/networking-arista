@@ -19,16 +19,25 @@ def setup_config():
     cfg.CONF.set_override('consolidation_limit', 100, "ml2_arista")
 
 
-class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
-    @staticmethod
-    def run_cmds(cmds, version=0):
+class FakeServerProxy():
+    def __init__(self, uri, transport=None):
+        self.uri = uri
+
+    def runCmds(self, cmds, version=0):
         ret = []
         for cmd in cmds:
             if 'show lldp local-info management 1' == cmd:
-                ret.append({'chassisId': '01-23-45-67-89-01'})
+                if "switch2" in self.uri:
+                    ret.append({'chassisId': '02-34-56-78-90-12'})
+                else:
+                    ret.append({'chassisId': '01-23-45-67-89-01'})
             elif 'show ip access-lists' == cmd:
                 cur_dir = os.path.dirname(os.path.realpath(__file__))
                 ret.append(json.load(open(cur_dir + '/jsonrpc.json')))
+
+                # add make some diff between routers
+                if "switch2" in self.uri:
+                    ret[len(ret) - 1]['aclList'][0]['sequence'] = []
             elif 'show ip access-lists summary' == cmd:
                 ret.append({"aclList": [
                     {"name": "SG-IN-test_security_group",
@@ -39,6 +48,9 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                 ret.append(None)
         return ret
 
+
+class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
+
     def setUp(self):
         super(AristaSecGroupSwitchDriverTest, self).setUp()
         setup_config()
@@ -46,10 +58,9 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         arista_sec_gp.db_lib = self.fake_rpc
 
         # Mock for maintain_connections
-        patcher = patch('jsonrpclib.Server', create=True)
+        patcher = patch('jsonrpclib.Server', new=FakeServerProxy)
         self.mock_rpc = patcher.start()
-        self.addCleanup(self.mock_rpc.stop)
-        self.mock_rpc.return_value.runCmds.side_effect = self.run_cmds
+        self.addCleanup(patcher.stop)
 
         self.drv = arista_sec_gp.AristaSecGroupSwitchDriver(self.fake_rpc)
         self.mock_sg_cmds = mock.MagicMock()
@@ -209,3 +220,37 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
             'no permit tcp any any range 0 65535 syn', 'no permit udp any any range 0 65535',
             'no permit udp any range 0 65535 100.100.0.0/16', 'no permit icmp any any 0 0', 'exit'],
             self.mock_sg_cmds.call_args[0][0], "unexpected security group rules")
+
+    def test_async_switches(self):
+        cfg.CONF.set_override('switch_info', ['switch1:user:pass', 'switch2:user:pass'], "ml2_arista")
+
+        sg = {'id': 'test_security_group',
+              'tenant_id': '123456789',
+              'security_group_rules': [self._get_sg_rule('tcp', '192.168.0.1')]
+              }
+        self.fake_rpc.get_all_security_gp_to_port_bindings.return_value = [
+            {'port_id': 'PORTID123456789', 'security_group_id': 'test_security_group'}]
+        self.fake_rpc.get_security_groups.return_value = {'test_security_group': sg}
+
+        self.drv.perform_sync_of_sg()
+        self.assertEqual(2, self.mock_sg_cmds.call_count, "expected to be called twice")
+        self.assertEqual([
+            'ip access-list SG-IN-test_security_group', 'permit tcp any any established',
+            'no permit udp any range 0 65535 any range 32768 65535',
+            'no permit tcp 100.100.0.0/16 any range 0 65535 syn', 'no permit icmp any any 0 0',
+            'no permit icmp 100.100.0.0/16 any 0 0', 'no permit udp 100.100.0.0/16 any range 0 65535',
+            'no permit tcp any any range tcpmux 65535 syn', 'permit tcp host 192.168.0.1 any range 22 1025 syn', 'exit',
+            'ip access-list SG-OUT-test_security_group', 'permit tcp any any established',
+            'no permit tcp any any range 0 65535 syn', 'no permit udp any any range 0 65535',
+            'no permit udp any range 0 65535 100.100.0.0/16', 'no permit icmp any any 0 0', 'exit'],
+            self.mock_sg_cmds.call_args_list[0][0][0], "unexpected security group rules on Switch 1")
+        self.assertEqual([
+            'ip access-list SG-IN-test_security_group', 'permit tcp any any established',
+            'permit tcp host 192.168.0.1 any range 22 1025 syn',
+            'permit udp any eq 67 any eq 68',
+            'exit', 'ip access-list SG-OUT-test_security_group',
+            'permit tcp any any established',
+            'no permit tcp any any range 0 65535 syn', 'no permit udp any any range 0 65535',
+            'no permit udp any range 0 65535 100.100.0.0/16', 'no permit icmp any any 0 0',
+            'exit'],
+            self.mock_sg_cmds.call_args_list[1][0][0], "unexpected security group rules on Switch 2")

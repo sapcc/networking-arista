@@ -213,9 +213,9 @@ class AristaSecGroupSwitchDriver(object):
 
             for c in acl_dict:
                 if rule == 'icmp_custom2':
-                    cmds.append(c.format(cidr, from_port, to_port))
+                    cmds.append(c.format(cidr, from_port, to_port).strip())
                 else:
-                    cmds.append(c.format(cidr, from_port))
+                    cmds.append(c.format(cidr, from_port).strip())
             return in_cmds, out_cmds
         elif protocol == 'dhcp':
             # Not really a layer2 protocol
@@ -250,12 +250,14 @@ class AristaSecGroupSwitchDriver(object):
             for c in in_rule:
                 in_cmds.append(c.format(protocol, cidr,
                                         self._get_port_name(from_port, protocol),
-                                        self._get_port_name(to_port, protocol), flags))
+                                        self._get_port_name(to_port, protocol), flags)
+                               .strip())
 
             for c in out_rule:
                 out_cmds.append(c.format(protocol, cidr,
                                          self._get_port_name(from_port, protocol),
-                                         self._get_port_name(to_port, protocol), flags))
+                                         self._get_port_name(to_port, protocol), flags)
+                                .strip())
 
             return in_cmds, out_cmds
 

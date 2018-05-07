@@ -52,6 +52,7 @@ EOS_UNREACHABLE_MSG = _('Unable to reach EOS')
 
 # Note 'None,null' means default rule - i.e. deny everything
 SUPPORTED_SG_PROTOCOLS = ['tcp', 'udp', 'icmp', 'dhcp', None]
+SUPPORTED_SG_EHTERTYPES = ['IPv4']
 
 DIRECTIONS = ['ingress', 'egress']
 INTERFACE_DIRECTIONS = ['configuredEgressIntfs', 'configuredIngressIntfs']
@@ -370,7 +371,8 @@ class AristaSecGroupSwitchDriver(object):
         Deals with multiple configurations - such as multiple switches
         """
         # Only deal with valid protocols - skip the rest
-        if not sgr or sgr['protocol'] not in SUPPORTED_SG_PROTOCOLS:
+        if not sgr or sgr['protocol'] not in SUPPORTED_SG_PROTOCOLS or (
+            sgr['ethertype'] not in SUPPORTED_SG_EHTERTYPES):
             return in_cmds, out_cmds
 
         if sgr['protocol'] is None:
@@ -562,6 +564,7 @@ class AristaSecGroupSwitchDriver(object):
     @staticmethod
     def _sg_enable_dhcp(sg_rules):
         sg_rules.append({'protocol': 'dhcp',
+                         'ethertype': 'IPv4',
                          'remote_ip_prefix': None,
                          'remote_group_id': None,
                          'port_range_min': 67,
@@ -572,25 +575,19 @@ class AristaSecGroupSwitchDriver(object):
     def _create_acl_diff(self, existing_acls, new_acls):
         """Accepts 2 cmd lists and creates a diff between them."""
 
-        diff = []
+        diff = list(new_acls)
         for existing_acl in existing_acls:
             found = False
             for new_acl in new_acls:
-
                 # Rules exists, don't reapply
-                if existing_acl['text'] == new_acl:
-                    new_acls.remove(existing_acl['text'])
+                if new_acl in [existing_acl['text'], self._conv_acl(existing_acl)]:
+                    diff.remove(new_acl)
                     found = True
-                    break
-                elif self._conv_acl(existing_acl) == new_acl:
-                    new_acls.remove(self._conv_acl(existing_acl))
-                    found = True
-                    break
 
             if not found:
                 # delete rule
                 diff.append(str('no ' + existing_acl['text']))
-        return diff + new_acls
+        return diff
 
     def _conv_acl(self, acl):
         """Generates AristaACL rule text without port names if possible"""
@@ -649,9 +646,11 @@ class AristaSecGroupSwitchDriver(object):
 
         num_rules = {'ingress': len(cmds['ingress']) - 2, 'egress': len(cmds['egress']) - 2}
 
-        # Try consolidation
+        # Try consolidation (or poor mans version, list(set()) is too slow for large ACL lists)
         if 0 < self.max_rules < num_rules['ingress'] + num_rules['egress']:
             cmds = self._consolidate_cmds(cmds)
+        else:
+            cmds['ingress'], cmds['egress'] = (list(set(cmds['ingress'])), list(set(cmds['egress'])))
 
         # Create per server diff and apply
         for server_id, s in six.iteritems(self._server_by_id):
@@ -667,7 +666,7 @@ class AristaSecGroupSwitchDriver(object):
                     server_diff[dir] = self._create_acl_diff([
                         acl for acl in existing_acls[server_id].get(acl_name, [])
                         if acl['text'] not in self.aclCreateDict['create']
-                    ], list(cmds[dir]))
+                    ], cmds[dir])
 
                 if len(server_diff[dir]) > 0:
                     server_diff[dir] = self._create_acl_shell(security_group_id)[d] + server_diff[dir] + ['exit']

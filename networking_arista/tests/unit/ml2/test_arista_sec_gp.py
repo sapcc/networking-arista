@@ -79,6 +79,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
     @staticmethod
     def _get_sg_rule(protocol, remote_ip_prefix, port_range_min=22, port_range_max=1025):
         return {'protocol': protocol,
+                'ethertype': 'IPv4',
                 'remote_ip_prefix': remote_ip_prefix,
                 'remote_group_id': None,
                 'port_range_min': port_range_min,
@@ -212,10 +213,11 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         self.assertEqual(1, self.mock_sg_cmds.call_count, "expected to be called once")
         self.assertEqual([
             'ip access-list SG-IN-test_security_group', 'permit tcp any any established',
+            'permit tcp host 192.168.0.1 any range 22 1025 syn',
             'no permit udp any range 0 65535 any range 32768 65535',
             'no permit tcp 100.100.0.0/16 any range 0 65535 syn', 'no permit icmp any any 0 0',
             'no permit icmp 100.100.0.0/16 any 0 0', 'no permit udp 100.100.0.0/16 any range 0 65535',
-            'no permit tcp any any range tcpmux 65535 syn', 'permit tcp host 192.168.0.1 any range 22 1025 syn', 'exit',
+            'no permit tcp any any range tcpmux 65535 syn', 'exit',
             'ip access-list SG-OUT-test_security_group', 'permit tcp any any established',
             'no permit tcp any any range 0 65535 syn', 'no permit udp any any range 0 65535',
             'no permit udp any range 0 65535 100.100.0.0/16', 'no permit icmp any any 0 0', 'exit'],
@@ -236,10 +238,11 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         self.assertEqual(2, self.mock_sg_cmds.call_count, "expected to be called twice")
         self.assertEqual([
             'ip access-list SG-IN-test_security_group', 'permit tcp any any established',
+            'permit tcp host 192.168.0.1 any range 22 1025 syn',
             'no permit udp any range 0 65535 any range 32768 65535',
             'no permit tcp 100.100.0.0/16 any range 0 65535 syn', 'no permit icmp any any 0 0',
             'no permit icmp 100.100.0.0/16 any 0 0', 'no permit udp 100.100.0.0/16 any range 0 65535',
-            'no permit tcp any any range tcpmux 65535 syn', 'permit tcp host 192.168.0.1 any range 22 1025 syn', 'exit',
+            'no permit tcp any any range tcpmux 65535 syn', 'exit',
             'ip access-list SG-OUT-test_security_group', 'permit tcp any any established',
             'no permit tcp any any range 0 65535 syn', 'no permit udp any any range 0 65535',
             'no permit udp any range 0 65535 100.100.0.0/16', 'no permit icmp any any 0 0', 'exit'],
@@ -254,3 +257,21 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
             'no permit udp any range 0 65535 100.100.0.0/16', 'no permit icmp any any 0 0',
             'exit'],
             self.mock_sg_cmds.call_args_list[1][0][0], "unexpected security group rules on Switch 2")
+
+    def test_ipv6_duplicated_acls(self):
+        sg = {'tenant_id': 'test_tenant',
+              'id': 'test_security_group', 'security_group_rules': [
+                {'direction': 'egress', 'protocol': None, 'port_range_max': None,
+                 'id': '2187a27a-8bd2-40c9-897a-4265f2c91745', 'remote_group_id': None, 'remote_ip_prefix': None,
+                 'security_group_id': 'test_security_group',
+                 'tenant_id': 'test_tennant', 'port_range_min': None, 'ethertype': 'IPv4'},
+                {'direction': 'egress', 'protocol': None, 'port_range_max': None,
+                 'id': '2187a27a-8bd2-40c9-897a-4265f2c91745', 'remote_group_id': None, 'remote_ip_prefix': None,
+                 'security_group_id': 'test_security_group',
+                 'tenant_id': 'test_tenant', 'port_range_min': None, 'ethertype': 'IPv6'}],
+              'name': 'default'}
+        self.mock_sg_cmds.reset_mock()
+        self.drv.create_acl(sg)
+        cmds = self.mock_sg_cmds.call_args_list[0][0][0]
+        # + 2 for EXIT and Security Group preamble
+        self.assertEqual(len(list(set(cmds))) + 2, len(cmds), 'unexpected duplicate entries')

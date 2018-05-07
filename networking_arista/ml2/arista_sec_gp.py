@@ -646,11 +646,9 @@ class AristaSecGroupSwitchDriver(object):
 
         num_rules = {'ingress': len(cmds['ingress']) - 2, 'egress': len(cmds['egress']) - 2}
 
-        # Try consolidation (or poor mans version, list(set()) is too slow for large ACL lists)
+        # Try consolidation
         if 0 < self.max_rules < num_rules['ingress'] + num_rules['egress']:
             cmds = self._consolidate_cmds(cmds)
-        else:
-            cmds['ingress'], cmds['egress'] = (list(set(cmds['ingress'])), list(set(cmds['egress'])))
 
         # Create per server diff and apply
         for server_id, s in six.iteritems(self._server_by_id):

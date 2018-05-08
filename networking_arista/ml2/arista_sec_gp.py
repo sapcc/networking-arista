@@ -374,9 +374,7 @@ class AristaSecGroupSwitchDriver(object):
         if not sgr or sgr['protocol'] not in SUPPORTED_SG_PROTOCOLS:
             return in_cmds, out_cmds
 
-        if sgr['ethertype'] is None:
-            sgr['ethertype'] = SUPPORTED_SG_ETHERTYPES[0]
-        elif sgr['ethertype'] not in SUPPORTED_SG_ETHERTYPES:
+        if sgr['ethertype'] is not None and sgr['ethertype'] not in SUPPORTED_SG_ETHERTYPES:
             return in_cmds, out_cmds
 
         if sgr['protocol'] is None:

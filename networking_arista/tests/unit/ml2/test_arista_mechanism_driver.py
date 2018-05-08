@@ -298,11 +298,7 @@ class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
         post_data = {'name': 'keystone', 'password': 'fun',
                      'tenant': 'tenant_name', 'user': 'neutron',
                      'authUrl': 'abc://host:5000/v2.0/'}
-        clean_data = post_data.copy()
-        clean_data['password'] = "*****"
         calls = [
-            ('region/RegionOne/service-end-point', 'POST', [post_data],
-             [clean_data]),
             ('region/RegionOne', 'PUT',
              [{'name': 'RegionOne', 'syncInterval': 10}])
         ]
@@ -1299,30 +1295,19 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
         keystone_url = '%s://%s:%s/v2.0/' % (auth.auth_protocol,
                                              auth.auth_host,
                                              auth.auth_port)
-        auth_cmd = ('auth url %s user %s password %s tenant %s' % (
-                    keystone_url,
-                    auth.admin_user,
-                    auth.admin_password,
-                    auth.admin_tenant_name))
         cmd1 = ['show openstack agent uuid']
         cmd2 = ['enable',
                 'configure',
                 'cvx',
                 'service openstack',
                 'region %s' % self.region,
-                auth_cmd,
                 'sync interval %d' % cfg.CONF.ml2_arista.sync_interval,
                 ]
-
-        clean_cmd2 = list(cmd2)
-        idx = clean_cmd2.index(auth_cmd)
-        clean_cmd2[idx] = clean_cmd2[idx].replace(auth.admin_password,
-                                                  '******')
 
         self._verify_send_eapi_request_calls(
             mock_send_eapi_req,
             [cmd1, cmd2],
-            commands_to_log=[cmd1, clean_cmd2])
+            commands_to_log=[cmd1, cmd2])
 
     def _enable_sync_cmds(self):
         self.drv.cli_commands[

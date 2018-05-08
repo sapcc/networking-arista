@@ -604,20 +604,6 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
         self.set_cvx_available()
         return self._send_request(host, path, method, data, sanitized_data)
 
-    def _create_keystone_endpoint(self):
-        path = 'region/%s/service-end-point' % self.region
-        data = {
-            'name': 'keystone',
-            'authUrl': self._keystone_url(),
-            'user': self.keystone_conf.admin_user or "",
-            'password': self.keystone_conf.admin_password or "",
-            'tenant': self.keystone_conf.admin_tenant_name or ""
-        }
-        # Hide the password
-        sanitized_data = data.copy()
-        sanitized_data['password'] = "*****"
-        self._send_api_request(path, 'POST', [data], [sanitized_data])
-
     def _set_region_update_interval(self):
         path = 'region/%s' % self.region
         data = {
@@ -628,7 +614,6 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
 
     def register_with_eos(self, sync=False):
         self.create_region(self.region)
-        self._create_keystone_endpoint()
         self._set_region_update_interval()
 
     def check_supported_features(self):
@@ -1814,23 +1799,11 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
         self._run_eos_cmds(cmds)
 
     def register_with_eos(self, sync=False):
-        cmds = ['auth url %s user %s password %s tenant %s' % (
-                self._keystone_url(),
-                self.keystone_conf.admin_user,
-                self.keystone_conf.admin_password,
-                self.keystone_conf.admin_tenant_name)]
-
-        log_cmds = ['auth url %s user %s password %s tenant %s' % (
-                    self._keystone_url(),
-                    self.keystone_conf.admin_user,
-                    '******',
-                    self.keystone_conf.admin_tenant_name)]
-
+        cmds = []
         sync_interval_cmd = 'sync interval %d' % self.sync_interval
         cmds.append(sync_interval_cmd)
-        log_cmds.append(sync_interval_cmd)
 
-        self._run_openstack_cmds(cmds, commands_to_log=log_cmds, sync=sync)
+        self._run_openstack_cmds(cmds, sync=sync)
 
     def get_region_updated_time(self):
         timestamp_cmd = self.cli_commands['timestamp']

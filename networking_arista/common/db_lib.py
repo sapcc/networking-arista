@@ -258,7 +258,7 @@ def is_tenant_provisioned(context, tenant_id):
 
     return query(literal(True)).filter(
         query(db_models.AristaProvisionedTenants). \
-        filter_by(tenant_id=tenant_id).exists())
+        filter_by(tenant_id=tenant_id).exists()).scalar()
 
 
 def num_nets_provisioned(context, tenant_id):
@@ -470,7 +470,7 @@ class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,
 
     def get_shared_network_owner_id(self, context, network_id):
         filters = {'id': [network_id]}
-        nets = self.get_networks(filters=filters) or []
+        nets = self.get_networks(filters=filters, context=context) or []
         segments = segments_db.get_network_segments(context.session,
                                                     network_id)
         if not nets or not segments:

@@ -14,6 +14,7 @@
 
 import collections
 import json
+import math
 import os
 import re
 import socket
@@ -21,7 +22,6 @@ import ssl
 from collections import defaultdict
 from hashlib import sha1
 from httplib import HTTPException
-from socket import error as socket_error
 
 import jsonrpclib
 import six
@@ -41,9 +41,9 @@ if not dogstatsd or os.getenv('STATSD_MOCK', False):
     STATS = Mock()
 else:
     STATS = dogstatsd.DogStatsd(host=os.getenv('STATSD_HOST', 'localhost'),
-                      port=int(os.getenv('STATSD_PORT', 9125)),
-                      namespace=os.getenv('STATSD_PREFIX', 'openstack')
-                      )
+                                port=int(os.getenv('STATSD_PORT', 9125)),
+                                namespace=os.getenv('STATSD_PREFIX', 'openstack')
+                                )
 
 
 LOG = logging.getLogger(__name__)
@@ -52,11 +52,12 @@ EOS_UNREACHABLE_MSG = _('Unable to reach EOS')
 
 # Note 'None,null' means default rule - i.e. deny everything
 SUPPORTED_SG_PROTOCOLS = ['tcp', 'udp', 'icmp', 'dhcp', None]
+SUPPORTED_SG_ETHERTYPES = ['IPv4']
 
 DIRECTIONS = ['ingress', 'egress']
 INTERFACE_DIRECTIONS = ['configuredEgressIntfs', 'configuredIngressIntfs']
 
-acl_cmd = { # For a rule 0: protocol, 1: cidr, 2: from_port, 3: to_port, 4: flags
+acl_cmd = {  # For a rule 0: protocol, 1: cidr, 2: from_port, 3: to_port, 4: flags
     'acl': {'create': ['ip access-list {0}',
                        'permit tcp any any established'],
             'in_rule': ['permit {0} {1} any range {2} {3} {4}'],
@@ -114,6 +115,7 @@ class AristaSecGroupSwitchDriver(object):
     EOS - operating system used on Arista hardware
     Command API - JSON RPC API provided by Arista EOS
     """
+
     def __init__(self, neutron_db):
         self._ndb = neutron_db
         self._server_by_id = dict()
@@ -122,7 +124,11 @@ class AristaSecGroupSwitchDriver(object):
         self._validate_config()
         self._maintain_connections()
         self._statsd = STATS
-        self.max_rules = cfg.CONF.ml2_arista.get('consolidation_limit')
+        self.max_rules = cfg.CONF.ml2_arista.get('lossy_consolidation_limit')
+        self._protocol_table = {
+            num: name[8:] for name, num in vars(socket).items()
+            if name.startswith("IPPROTO")
+        }
 
         self.aclCreateDict = acl_cmd['acl']
         self.aclApplyDict = acl_cmd['apply']
@@ -147,7 +153,7 @@ class AristaSecGroupSwitchDriver(object):
                 system_id = EUI(ret[0]['chassisId'])
                 self._server_by_id[system_id] = server
                 self._server_by_ip[switch_ip] = server
-            except (socket_error, HTTPException) as e:
+            except (socket.error, HTTPException) as e:
                 LOG.warn("Could not connect to server %s due to %s", switch_ip, e)
 
     def _get_server(self, switch_info, switch_id):
@@ -213,9 +219,9 @@ class AristaSecGroupSwitchDriver(object):
 
             for c in acl_dict:
                 if rule == 'icmp_custom2':
-                    cmds.append(c.format(cidr, from_port, to_port).strip())
+                    cmds.append(c.format(cidr, from_port, to_port))
                 else:
-                    cmds.append(c.format(cidr, from_port).strip())
+                    cmds.append(c.format(cidr, from_port))
             return in_cmds, out_cmds
         elif protocol == 'dhcp':
             # Not really a layer2 protocol
@@ -248,16 +254,10 @@ class AristaSecGroupSwitchDriver(object):
                     out_rule = self.aclCreateDict['in_rule_reverse']
 
             for c in in_rule:
-                in_cmds.append(c.format(protocol, cidr,
-                                        self._get_port_name(from_port, protocol),
-                                        self._get_port_name(to_port, protocol), flags)
-                               .strip())
+                in_cmds.append(c.format(protocol, cidr, from_port, to_port, flags).strip())
 
             for c in out_rule:
-                out_cmds.append(c.format(protocol, cidr,
-                                         self._get_port_name(from_port, protocol),
-                                         self._get_port_name(to_port, protocol), flags)
-                                .strip())
+                out_cmds.append(c.format(protocol, cidr, from_port, to_port, flags).strip())
 
             return in_cmds, out_cmds
 
@@ -288,7 +288,7 @@ class AristaSecGroupSwitchDriver(object):
         if protocol == 'icmp':
             # ICMP rules require special processing
             if ((from_port and to_port) or
-               (not from_port and not to_port)):
+                    (not from_port and not to_port)):
                 rule = 'icmp_custom2'
             elif from_port and not to_port:
                 rule = 'icmp_custom1'
@@ -372,6 +372,9 @@ class AristaSecGroupSwitchDriver(object):
         """
         # Only deal with valid protocols - skip the rest
         if not sgr or sgr['protocol'] not in SUPPORTED_SG_PROTOCOLS:
+            return in_cmds, out_cmds
+
+        if sgr['ethertype'] is not None and sgr['ethertype'] not in SUPPORTED_SG_ETHERTYPES:
             return in_cmds, out_cmds
 
         if sgr['protocol'] is None:
@@ -511,7 +514,7 @@ class AristaSecGroupSwitchDriver(object):
             return None
 
     @staticmethod
-    def _consolidate_ips(consolidation_dict):
+    def _consolidate_ips(consolidation_dict, lossy=False):
         for prot, port_starts in six.iteritems(consolidation_dict):
             for port_start, port_ends in six.iteritems(port_starts):
                 for port_end, ips in six.iteritems(port_ends):
@@ -519,11 +522,20 @@ class AristaSecGroupSwitchDriver(object):
                         ipset = IPSet(IPNetwork('0.0.0.0/0'))
                     else:
                         ipset = IPSet(ips)
+
+                    def enlarge(network):
+                        if network.prefixlen > 24:
+                            network.prefixlen = 24
+                        return network
+
+                    if lossy:
+                        ipset = IPSet([enlarge(network) for network in ipset.iter_cidrs()])
+
                     for net in ipset.iter_cidrs():
                         yield (prot, str(net), port_start, port_end,
                                'syn' if prot == 'tcp' else '')
 
-    def _consolidate_cmds(self, cmds):
+    def _consolidate_cmds(self, cmds, num_rules):
         r = {
             # This compacts typical setups by using other security groups as rule
             # e.g. Match 'permit tcp host 10.180.1.2 any range 10000 10000 syn'
@@ -547,11 +559,11 @@ class AristaSecGroupSwitchDriver(object):
                 else:
                     processed_cmds[dir].append(cmd)
 
-            for network in self._consolidate_ips(consolidation_dict):
+            for network in self._consolidate_ips(consolidation_dict, lossy=(0 < self.max_rules < num_rules)):
                 if dir == 'ingress':
-                    processed_cmds[dir].append("permit %s %s any range %s %s %s" % network)
+                    processed_cmds[dir].append(("permit %s %s any range %s %s %s" % network).strip())
                 else:
-                    processed_cmds[dir].append("permit %s any %s range %s %s %s" % network)
+                    processed_cmds[dir].append(("permit %s any %s range %s %s %s" % network).strip())
 
         LOG.debug("Consolidated ACLs from %d/%d to %d/%d!" %
                   (len(cmds['ingress']),
@@ -563,26 +575,64 @@ class AristaSecGroupSwitchDriver(object):
     @staticmethod
     def _sg_enable_dhcp(sg_rules):
         sg_rules.append({'protocol': 'dhcp',
-                                     'remote_ip_prefix': None,
-                                     'remote_group_id': None,
-                                     'port_range_min': 'bootps',
-                                     'port_range_max': 'bootpc',
-                                     'direction': 'both'
-                                     })
+                         'ethertype': 'IPv4',
+                         'remote_ip_prefix': None,
+                         'remote_group_id': None,
+                         'port_range_min': 67,
+                         'port_range_max': 68,
+                         'direction': 'both'
+                         })
 
     def _create_acl_diff(self, existing_acls, new_acls):
         """Accepts 2 cmd lists and creates a diff between them."""
 
-        diff = []
+        diff = list(new_acls)
         for existing_acl in existing_acls:
-            if existing_acl not in new_acls:
-                # delete rule
-                diff.append(str('no ' + existing_acl))
-            else:
+            found = False
+            for new_acl in new_acls:
                 # Rules exists, don't reapply
-                new_acls.remove(existing_acl)
+                if new_acl in [existing_acl['text'], self._conv_acl(existing_acl)]:
+                    diff.remove(new_acl)
+                    found = True
 
-        return diff + new_acls
+            if not found:
+                # delete rule
+                diff.append(str('no ' + existing_acl['text']))
+        return diff
+
+    def _conv_acl(self, acl):
+        """Generates AristaACL rule text without port names if possible"""
+
+        if 'ruleFilter' not in acl:
+            return acl['text']
+
+        ips = {'src': '', 'dst': ''}
+        for dir in ['src', 'dst']:
+            if acl['ruleFilter']['source' if dir == 'src' else 'destination']['mask'] == 0:
+                ip = 'any'
+            elif acl['ruleFilter']['source' if dir == 'src' else 'destination']['mask'] == 1 << 32:
+                ip = 'host ' + acl['ruleFilter']['source' if dir == 'src' else 'destination']['ip']
+            else:
+                cidr_mask = int(round(math.log(4L, 2)))
+                ip = acl['ruleFilter']['source' if dir == 'src' else 'destination']['ip'] + '/' + str(cidr_mask)
+
+            if acl['ruleFilter'][dir + 'Port']['oper'] == 'any':
+                ips[dir] = ip
+            elif acl['ruleFilter'][dir + 'Port']['oper'] == 'eq':
+                ips[dir] = "{} eq {}".format(ip,
+                                             ','.join([str(port) for port in acl['ruleFilter'][dir + 'Port']['ports']]))
+            elif acl['ruleFilter'][dir + 'Port']['oper'] == 'range':
+                ips[dir] = "{} range {}".format(ip, ' '.join(
+                    [str(port) for port in acl['ruleFilter'][dir + 'Port']['ports']]))
+
+        prop = {
+            'action': acl['action'],
+            'protocol': self._protocol_table[acl['ruleFilter']['protocol']].lower(),
+            'src': ips['src'],
+            'dst': ips['dst'],
+            'flags': 'syn' if acl['ruleFilter']['tcpFlags'] else ''
+        }
+        return "{action} {protocol} {src} {dst} {flags}".format(**prop).strip()
 
     def create_acl(self, sg, security_group_ips=None, existing_acls=None):
         """Creates an ACL on Arista Switch.
@@ -607,9 +657,8 @@ class AristaSecGroupSwitchDriver(object):
 
         num_rules = {'ingress': len(cmds['ingress']) - 2, 'egress': len(cmds['egress']) - 2}
 
-        # Try consolidation
-        if 0 < self.max_rules < num_rules['ingress'] + num_rules['egress']:
-            cmds = self._consolidate_cmds(cmds)
+        # let's consolidate
+        cmds = self._consolidate_cmds(cmds, num_rules['ingress'] + num_rules['egress'])
 
         # Create per server diff and apply
         for server_id, s in six.iteritems(self._server_by_id):
@@ -623,9 +672,9 @@ class AristaSecGroupSwitchDriver(object):
                 acl_name = self._arista_acl_name(security_group_id, dir)
                 if existing_acls is not None:
                     server_diff[dir] = self._create_acl_diff([
-                        acl['text'] for acl in existing_acls[server_id].get(acl_name, [])
+                        acl for acl in existing_acls[server_id].get(acl_name, [])
                         if acl['text'] not in self.aclCreateDict['create']
-                    ], list(cmds[dir]))
+                    ], cmds[dir])
 
                 if len(server_diff[dir]) > 0:
                     server_diff[dir] = self._create_acl_shell(security_group_id)[d] + server_diff[dir] + ['exit']
@@ -910,13 +959,13 @@ class AristaSecGroupSwitchDriver(object):
                 else:
                     try:
                         self._run_openstack_sg_cmds([
-                                               'interface ' + port_id,
-                                               'ip access-group default in',
-                                               'no ip access-group default in',
-                                               'ip access-group default out',
-                                               'no ip access-group default out',
-                                               'exit'
-                                               ], server)
+                            'interface ' + port_id,
+                            'ip access-group default in',
+                            'no ip access-group default in',
+                            'ip access-group default out',
+                            'no ip access-group default out',
+                            'exit'
+                        ], server)
                     except arista_exc.AristaServicePluginRpcError as e:
                         pass
 

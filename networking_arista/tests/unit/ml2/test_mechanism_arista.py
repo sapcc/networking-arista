@@ -519,19 +519,18 @@ class AristaDriverTestCase(testlib_api.SqlTestCase):
         physnet = dict(physnet='default')
         self.fake_rpc.get_physical_network.return_value = physnet
         self.drv.rpc.hpb_supported.return_value = True
-
         self.drv.delete_port_postcommit(port_context)
 
         expected_calls = [
             mock.call.NeutronNets(),
             mock.call.__nonzero__(),
-            mock.call.get_physical_network(host_id),
+            mock.call.get_physical_network(host_id, context=port_context),
             mock.call.is_network_provisioned(tenant_id, network_id, None,
                                              None),
-            mock.call.unplug_port_from_network(device_id, 'compute', host_id,
-                                               port_id, network_id, tenant_id,
-                                               None, vnic_type,
-                                               switch_bindings=profile),
+            mock.call.unplug_port_from_network(
+                device_id, 'compute', host_id, port_id, network_id, tenant_id,
+                None, vnic_type, switch_bindings=profile,
+                segments=network_context.network_segments),
             mock.call.remove_security_group(None, profile),
             mock.call.num_nets_provisioned(tenant_id),
             mock.call.num_vms_provisioned(tenant_id),
@@ -574,14 +573,14 @@ class AristaDriverTestCase(testlib_api.SqlTestCase):
         self.drv.delete_port_postcommit(port_context)
 
         expected_calls += [
-            mock.call.get_physical_network(host_id),
+            mock.call.get_physical_network(host_id, context=port_context),
             mock.call.is_network_provisioned(INTERNAL_TENANT_ID, network_id,
                                              None, None),
-            mock.call.unplug_port_from_network(device_id, 'compute', host_id,
-                                               port_id, network_id,
-                                               INTERNAL_TENANT_ID, None,
-                                               vnic_type,
-                                               switch_bindings=profile),
+            mock.call.unplug_port_from_network(
+                device_id, 'compute', host_id, port_id, network_id,
+                INTERNAL_TENANT_ID, None, vnic_type,
+                switch_bindings=profile,
+                segments=network_context.network_segments),
             mock.call.remove_security_group(None, profile),
             mock.call.num_nets_provisioned(INTERNAL_TENANT_ID),
             mock.call.num_vms_provisioned(INTERNAL_TENANT_ID),
@@ -812,11 +811,10 @@ class AristaDriverTestCase(testlib_api.SqlTestCase):
                                               segments),
             mock.call.is_network_provisioned(tenant_id, network_id, None,
                                              None),
-            mock.call.unplug_port_from_network(device_id, 'compute',
-                                               orig_host_id, port_id,
-                                               network_id, tenant_id,
-                                               None, vnic_type,
-                                               switch_bindings=profile),
+            mock.call.unplug_port_from_network(
+                device_id, 'compute', orig_host_id, port_id,
+                network_id, tenant_id, None, vnic_type,
+                switch_bindings=profile, segments=segments),
             mock.call.remove_security_group(None, profile),
             mock.call.num_nets_provisioned(tenant_id),
             mock.call.num_vms_provisioned(tenant_id),
@@ -888,7 +886,8 @@ class AristaDriverTestCase(testlib_api.SqlTestCase):
                                                port_id, network_id,
                                                INTERNAL_TENANT_ID,
                                                None, vnic_type,
-                                               switch_bindings=profile),
+                                               switch_bindings=profile,
+                                               segments=segments),
             mock.call.remove_security_group(None, profile),
             mock.call.num_nets_provisioned(INTERNAL_TENANT_ID),
             mock.call.num_vms_provisioned(INTERNAL_TENANT_ID),
@@ -986,7 +985,8 @@ class AristaDriverTestCase(testlib_api.SqlTestCase):
                                                port_id, network_id,
                                                tenant_id,
                                                None, vnic_type,
-                                               switch_bindings=profile),
+                                               switch_bindings=profile,
+                                               segments=segments),
             mock.call.remove_security_group(None, profile),
             mock.call.num_nets_provisioned(tenant_id),
             mock.call.num_vms_provisioned(tenant_id),

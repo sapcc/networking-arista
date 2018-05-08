@@ -52,7 +52,7 @@ EOS_UNREACHABLE_MSG = _('Unable to reach EOS')
 
 # Note 'None,null' means default rule - i.e. deny everything
 SUPPORTED_SG_PROTOCOLS = ['tcp', 'udp', 'icmp', 'dhcp', None]
-SUPPORTED_SG_EHTERTYPES = ['IPv4']
+SUPPORTED_SG_ETHERTYPES = ['IPv4']
 
 DIRECTIONS = ['ingress', 'egress']
 INTERFACE_DIRECTIONS = ['configuredEgressIntfs', 'configuredIngressIntfs']
@@ -124,7 +124,7 @@ class AristaSecGroupSwitchDriver(object):
         self._validate_config()
         self._maintain_connections()
         self._statsd = STATS
-        self.max_rules = cfg.CONF.ml2_arista.get('consolidation_limit')
+        self.max_rules = cfg.CONF.ml2_arista.get('lossy_consolidation_limit')
         self._protocol_table = {
             num: name[8:] for name, num in vars(socket).items()
             if name.startswith("IPPROTO")
@@ -371,8 +371,12 @@ class AristaSecGroupSwitchDriver(object):
         Deals with multiple configurations - such as multiple switches
         """
         # Only deal with valid protocols - skip the rest
-        if not sgr or sgr['protocol'] not in SUPPORTED_SG_PROTOCOLS or (
-            sgr['ethertype'] not in SUPPORTED_SG_EHTERTYPES):
+        if not sgr or sgr['protocol'] not in SUPPORTED_SG_PROTOCOLS:
+            return in_cmds, out_cmds
+
+        if sgr['ethertype'] is None:
+            sgr['ethertype'] = SUPPORTED_SG_ETHERTYPES[0]
+        elif sgr['ethertype'] not in SUPPORTED_SG_ETHERTYPES:
             return in_cmds, out_cmds
 
         if sgr['protocol'] is None:
@@ -512,7 +516,7 @@ class AristaSecGroupSwitchDriver(object):
             return None
 
     @staticmethod
-    def _consolidate_ips(consolidation_dict):
+    def _consolidate_ips(consolidation_dict, lossy=False):
         for prot, port_starts in six.iteritems(consolidation_dict):
             for port_start, port_ends in six.iteritems(port_starts):
                 for port_end, ips in six.iteritems(port_ends):
@@ -520,11 +524,20 @@ class AristaSecGroupSwitchDriver(object):
                         ipset = IPSet(IPNetwork('0.0.0.0/0'))
                     else:
                         ipset = IPSet(ips)
+
+                    def enlarge(network):
+                        if network.prefixlen > 24:
+                            network.prefixlen = 24
+                        return network
+
+                    if lossy:
+                        ipset = IPSet([enlarge(network) for network in ipset.iter_cidrs()])
+
                     for net in ipset.iter_cidrs():
                         yield (prot, str(net), port_start, port_end,
                                'syn' if prot == 'tcp' else '')
 
-    def _consolidate_cmds(self, cmds):
+    def _consolidate_cmds(self, cmds, num_rules):
         r = {
             # This compacts typical setups by using other security groups as rule
             # e.g. Match 'permit tcp host 10.180.1.2 any range 10000 10000 syn'
@@ -548,11 +561,11 @@ class AristaSecGroupSwitchDriver(object):
                 else:
                     processed_cmds[dir].append(cmd)
 
-            for network in self._consolidate_ips(consolidation_dict):
+            for network in self._consolidate_ips(consolidation_dict, lossy=(0 < self.max_rules < num_rules)):
                 if dir == 'ingress':
-                    processed_cmds[dir].append("permit %s %s any range %s %s %s".strip() % network)
+                    processed_cmds[dir].append(("permit %s %s any range %s %s %s" % network).strip())
                 else:
-                    processed_cmds[dir].append("permit %s any %s range %s %s %s".strip() % network)
+                    processed_cmds[dir].append(("permit %s any %s range %s %s %s" % network).strip())
 
         LOG.debug("Consolidated ACLs from %d/%d to %d/%d!" %
                   (len(cmds['ingress']),
@@ -646,9 +659,8 @@ class AristaSecGroupSwitchDriver(object):
 
         num_rules = {'ingress': len(cmds['ingress']) - 2, 'egress': len(cmds['egress']) - 2}
 
-        # Try consolidation
-        if 0 < self.max_rules < num_rules['ingress'] + num_rules['egress']:
-            cmds = self._consolidate_cmds(cmds)
+        # let's consolidate
+        cmds = self._consolidate_cmds(cmds, num_rules['ingress'] + num_rules['egress'])
 
         # Create per server diff and apply
         for server_id, s in six.iteritems(self._server_by_id):

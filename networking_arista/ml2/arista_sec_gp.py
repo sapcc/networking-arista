@@ -532,10 +532,14 @@ class AristaSecGroupSwitchDriver(object):
                         ipset = IPSet([enlarge(network) for network in ipset.iter_cidrs()])
 
                     for net in ipset.iter_cidrs():
-                        yield (prot, str(net), port_start, port_end,
+                        yield (prot,
+                               'any' if net == IPNetwork('0.0.0.0/0') else str(net),
+                               port_start,
+                               port_end,
                                'syn' if prot == 'tcp' else '')
 
     def _consolidate_cmds(self, cmds, num_rules):
+        lossy = 0 < self.max_rules < num_rules
         r = {
             # This compacts typical setups by using other security groups as rule
             # e.g. Match 'permit tcp host 10.180.1.2 any range 10000 10000 syn'
@@ -559,17 +563,18 @@ class AristaSecGroupSwitchDriver(object):
                 else:
                     processed_cmds[dir].append(cmd)
 
-            for network in self._consolidate_ips(consolidation_dict, lossy=(0 < self.max_rules < num_rules)):
+            for network in self._consolidate_ips(consolidation_dict, lossy):
                 if dir == 'ingress':
                     processed_cmds[dir].append(("permit %s %s any range %s %s %s" % network).strip())
                 else:
                     processed_cmds[dir].append(("permit %s any %s range %s %s %s" % network).strip())
 
-        LOG.debug("Consolidated ACLs from %d/%d to %d/%d!" %
-                  (len(cmds['ingress']),
-                   len(cmds['egress']),
-                   len(processed_cmds['ingress']),
-                   len(processed_cmds['egress'])))
+        if lossy:
+            LOG.debug("Consolidated ACLs lossy from %d/%d to %d/%d!" %
+                      (len(cmds['ingress']),
+                       len(cmds['egress']),
+                       len(processed_cmds['ingress']),
+                       len(processed_cmds['egress'])))
         return processed_cmds
 
     @staticmethod
@@ -586,18 +591,20 @@ class AristaSecGroupSwitchDriver(object):
     def _create_acl_diff(self, existing_acls, new_acls):
         """Accepts 2 cmd lists and creates a diff between them."""
 
-        diff = list(new_acls)
-        for existing_acl in existing_acls:
-            found = False
-            for new_acl in new_acls:
-                # Rules exists, don't reapply
-                if new_acl in [existing_acl['text'], self._conv_acl(existing_acl)]:
-                    diff.remove(new_acl)
-                    found = True
+        diff = []
+        for new_acl in new_acls:
+            # find all acls in existing set
+            acls = list(filter(lambda x: x['text'] == new_acl or self._conv_acls(x) == new_acl, existing_acls))
 
-            if not found:
-                # delete rule
-                diff.append(str('no ' + existing_acl['text']))
+            # new rule? add to doff
+            if len(acls) == 0:
+                diff.append(new_acl)
+
+            # Mark them as already synced
+            for acl in acls:
+                acl['synced'] = True
+
+        diff += ['no ' + acl['text'] for acl in existing_acls if not 'synced' in acl]
         return diff
 
     def _conv_acl(self, acl):

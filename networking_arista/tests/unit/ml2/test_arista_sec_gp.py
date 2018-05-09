@@ -167,9 +167,9 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         self.drv.create_acl(sg, None, self._get_existing_acls(sg['id']))
         self.assertEqual(1, self.mock_sg_cmds.call_count, "expected to be called once")
         self.assertEqual(9, len(self.mock_sg_cmds.call_args[0][0]), 'Expected only 9 rules')
-        self.assertIn('permit udp 0.0.0.0/0 any range 22 1025',
+        self.assertIn('permit udp any any range 22 1025',
                       self.mock_sg_cmds.call_args[0][0], 'Expected all network rule')
-        self.assertIn('permit udp any 0.0.0.0/0 range 22 1025',
+        self.assertIn('permit udp any any range 22 1025',
                       self.mock_sg_cmds.call_args[0][0], 'Excepted all network rule')
 
     def test_icmp(self):
@@ -219,6 +219,24 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
             'no permit icmp 100.100.0.0/16 any 0 0', 'no permit udp 100.100.0.0/16 any range 0 65535',
             'no permit tcp any any range tcpmux 65535 syn', 'exit',
             'ip access-list SG-OUT-test_security_group', 'permit tcp any any established',
+            'no permit tcp any any range 0 65535 syn', 'no permit udp any any range 0 65535',
+            'no permit udp any range 0 65535 100.100.0.0/16', 'no permit icmp any any 0 0', 'exit'],
+            self.mock_sg_cmds.call_args[0][0], "unexpected security group rules")
+
+        sg = {'id': 'test_security_group',
+              'tenant_id': '123456789',
+              'security_group_rules': [self._get_sg_rule(None, '100.100.0.0/16', None, None)]
+              }
+        self.fake_rpc.get_security_groups.return_value = {'test_security_group': sg}
+        self.drv.perform_sync_of_sg()
+        self.assertEqual([
+            'ip access-list SG-IN-test_security_group',
+            'permit tcp any any established', 'permit icmp 100.100.0.0/16 any',
+            'no permit udp any range 0 65535 any range 32768 65535',
+            'no permit icmp any any 0 0', 'no permit icmp 100.100.0.0/16 any 0 0',
+            'no permit tcp any any range tcpmux 65535 syn', 'exit',
+            'ip access-list SG-OUT-test_security_group',
+            'permit tcp any any established', 'permit udp any 100.100.0.0/16 range 0 65535',
             'no permit tcp any any range 0 65535 syn', 'no permit udp any any range 0 65535',
             'no permit udp any range 0 65535 100.100.0.0/16', 'no permit icmp any any 0 0', 'exit'],
             self.mock_sg_cmds.call_args[0][0], "unexpected security group rules")

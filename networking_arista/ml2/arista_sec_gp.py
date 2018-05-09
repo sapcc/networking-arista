@@ -594,7 +594,7 @@ class AristaSecGroupSwitchDriver(object):
         diff = []
         for new_acl in new_acls:
             # find all acls in existing set
-            acls = list(filter(lambda x: x['text'] == new_acl or self._conv_acls(x) == new_acl, existing_acls))
+            acls = list(filter(lambda x: x['text'] == new_acl or self._conv_acl(x) == new_acl, existing_acls))
 
             # new rule? add to doff
             if len(acls) == 0:

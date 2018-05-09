@@ -532,8 +532,15 @@ class AristaSecGroupSwitchDriver(object):
                         ipset = IPSet([enlarge(network) for network in ipset.iter_cidrs()])
 
                     for net in ipset.iter_cidrs():
+                        if net == IPNetwork('0.0.0.0/0'):
+                            ip = 'any'
+                        elif net.prefixlen == 32:
+                            ip = 'host ' + str(net.ip)
+                        else:
+                            ip = str(net)
+
                         yield (prot,
-                               'any' if net == IPNetwork('0.0.0.0/0') else str(net),
+                               ip,
                                port_start,
                                port_end,
                                'syn' if prot == 'tcp' else '')

@@ -34,7 +34,6 @@ from networking_arista.ml2 import mechanism_arista
 
 
 def setup_arista_wrapper_config(value=''):
-    cfg.CONF.keystone_authtoken = fake_keystone_info_class()
     cfg.CONF.set_override('eapi_host', value, "ml2_arista")
     cfg.CONF.set_override('eapi_username', value, "ml2_arista")
     cfg.CONF.set_override('sync_interval', 10, "ml2_arista")

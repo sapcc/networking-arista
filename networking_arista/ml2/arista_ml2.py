@@ -81,7 +81,6 @@ class AristaRPCWrapperBase(object):
         self._ndb = neutron_db
         self._validate_config()
         self._server_ip = None
-        self.keystone_conf = cfg.CONF.keystone_authtoken
         self.region = cfg.CONF.ml2_arista.region_name
         self.sync_interval = cfg.CONF.ml2_arista.sync_interval
         self.conn_timeout = cfg.CONF.ml2_arista.conn_timeout
@@ -118,17 +117,6 @@ class AristaRPCWrapperBase(object):
             msg = _('Required option eapi_username is not set')
             LOG.error(msg)
             raise arista_exc.AristaConfigError(msg=msg)
-
-    def _keystone_url(self):
-        if self.keystone_conf.auth_uri:
-            auth_uri = self.keystone_conf.auth_uri.rstrip('/')
-        else:
-            auth_uri = (
-                '%(protocol)s://%(host)s:%(port)s' %
-                {'protocol': self.keystone_conf.auth_protocol,
-                 'host': self.keystone_conf.auth_host,
-                 'port': self.keystone_conf.auth_port})
-        return '%s/v2.0/' % auth_uri
 
     def _api_username(self):
         return cfg.CONF.ml2_arista.eapi_username
@@ -2417,6 +2405,7 @@ class AristaNoCvxWrapperBase(AristaRPCWrapperBase,
             cmds.append('exit')
 
             result = server.runCmds(version=1, cmds=cmds)
+
     @staticmethod
     def _can_handle_port(segments, switch_bindings, vnic_type):
         if vnic_type != 'baremetal':

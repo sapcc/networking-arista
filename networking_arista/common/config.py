@@ -188,3 +188,5 @@ cfg.CONF.register_opts(ARISTA_L3_PLUGIN, "l3_arista")
 cfg.CONF.register_opts(ARISTA_DRIVER_OPTS, "ml2_arista")
 
 cfg.CONF.register_opts(ARISTA_TYPE_DRIVER_OPTS, "arista_type_driver")
+
+CONF = cfg.CONF

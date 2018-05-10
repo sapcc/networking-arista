@@ -2161,7 +2161,7 @@ class SyncService(object):
                         'shared':
                             neutron_nets.get(net_id,
                                              {'shared': False})['shared'],
-                        'segments': self._ndb.get_all_network_segments(net_id),
+                        'segments': self._ndb.get_all_network_segments(context, net_id),
                         }
                         for net_id in nets_to_update
                     ]

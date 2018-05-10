@@ -280,6 +280,7 @@ class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
         self.drv = arista_ml2.AristaRPCWrapperJSON(ndb)
         self.drv._server_ip = "10.11.12.13"
         self.region = 'RegionOne'
+        self.admin_ctx = neutron_context.get_admin_context()
 
     def _verify_send_api_request_call(self, mock_send_api_req, calls):
         # Sort the data that we are using for verifying
@@ -523,7 +524,7 @@ class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
                     'vnic_type': 'baremetal',
                     'profile': '{"local_link_information":'
                     '[{"switch_id": "switch01", "port_id": "Ethernet1"}]}'}
-        self.drv.create_instance_bulk(tenant_id, create_ports, devices,
+        self.drv.create_instance_bulk(self.admin_ctx, tenant_id, create_ports, devices,
                                       profiles)
         calls = [
             ('region/RegionOne/tenant?tenantId=ten-3', 'GET'),
@@ -1614,6 +1615,7 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
         setup_valid_config()
         self.fake_rpc = mock.MagicMock()
         self.drv = mechanism_arista.AristaDriver(self.fake_rpc)
+        self.admin_ctx = self.drv.ndb.admin_ctx
 
     def tearDown(self):
         super(RealNetStorageAristaDriverTestCase, self).tearDown()
@@ -1626,24 +1628,25 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
 
         network_context = self._get_network_context(tenant_id,
                                                     network_id,
-                                                    segmentation_id)
+                                                    segmentation_id,
+                                                    context=self.admin_ctx)
         self.drv.create_network_precommit(network_context)
-        net_provisioned = db_lib.is_network_provisioned(tenant_id, network_id)
+        net_provisioned = db_lib.is_network_provisioned(self.admin_ctx, tenant_id, network_id)
         self.assertTrue(net_provisioned, 'The network should be created')
 
         expected_num_nets = 1
-        num_nets_provisioned = db_lib.num_nets_provisioned(tenant_id)
+        num_nets_provisioned = db_lib.num_nets_provisioned(self.admin_ctx, tenant_id)
         self.assertEqual(expected_num_nets, num_nets_provisioned,
                          'There should be %d nets, not %d' %
                          (expected_num_nets, num_nets_provisioned))
 
         # Now test the delete network
         self.drv.delete_network_precommit(network_context)
-        net_provisioned = db_lib.is_network_provisioned(tenant_id, network_id)
+        net_provisioned = db_lib.is_network_provisioned(self.admin_ctx, tenant_id, network_id)
         self.assertFalse(net_provisioned, 'The network should be created')
 
         expected_num_nets = 0
-        num_nets_provisioned = db_lib.num_nets_provisioned(tenant_id)
+        num_nets_provisioned = db_lib.num_nets_provisioned(self.admin_ctx, tenant_id)
         self.assertEqual(expected_num_nets, num_nets_provisioned,
                          'There should be %d nets, not %d' %
                          (expected_num_nets, num_nets_provisioned))
@@ -1656,10 +1659,11 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
         for net_id in nets:
             network_context = self._get_network_context(tenant_id,
                                                         net_id,
-                                                        segmentation_id)
+                                                        segmentation_id,
+                                                        context=self.drv.ndb.admin_ctx)
             self.drv.create_network_precommit(network_context)
 
-        num_nets_provisioned = db_lib.num_nets_provisioned(tenant_id)
+        num_nets_provisioned = db_lib.num_nets_provisioned(self.drv.ndb.admin_ctx, tenant_id)
         self.assertEqual(expected_num_nets, num_nets_provisioned,
                          'There should be %d nets, not %d' %
                          (expected_num_nets, num_nets_provisioned))
@@ -1668,10 +1672,11 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
         for net_id in nets:
             network_context = self._get_network_context(tenant_id,
                                                         net_id,
-                                                        segmentation_id)
+                                                        segmentation_id,
+                                                        context=self.drv.ndb.admin_ctx)
             self.drv.delete_network_precommit(network_context)
 
-        num_nets_provisioned = db_lib.num_nets_provisioned(tenant_id)
+        num_nets_provisioned = db_lib.num_nets_provisioned(self.drv.ndb.admin_ctx, tenant_id)
         expected_num_nets = 0
         self.assertEqual(expected_num_nets, num_nets_provisioned,
                          'There should be %d nets, not %d' %
@@ -1694,10 +1699,11 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
                                                   tenant_id,
                                                   network_id,
                                                   vm_id,
-                                                  network_context)
+                                                  network_context,
+                                                  context=self.admin_ctx)
             self.drv.update_port_precommit(port_context)
 
-        vm_list = db_lib.get_vms(tenant_id)
+        vm_list = db_lib.get_vms(self.admin_ctx, tenant_id)
         provisioned_vms = len(vm_list)
         expected_vms = len(vms)
         self.assertEqual(expected_vms, provisioned_vms,
@@ -1711,10 +1717,11 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
                                                   tenant_id,
                                                   network_id,
                                                   vm_id,
-                                                  network_context)
+                                                  network_context,
+                                                  context=self.admin_ctx)
             self.drv.delete_port_precommit(port_context)
 
-        vm_list = db_lib.get_vms(tenant_id)
+        vm_list = db_lib.get_vms(self.admin_ctx, tenant_id)
         provisioned_vms = len(vm_list)
         expected_vms = 0
         self.assertEqual(expected_vms, provisioned_vms,
@@ -1724,7 +1731,7 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
     def test_cleanup_on_start(self):
         """Ensures that the driver cleans up the arista database on startup."""
         ndb = db_lib.NeutronNets()
-
+        self.drv.ndb = ndb
         # Create some networks in neutron db
         n1_context = self._get_network_context('t1', 'n1', 10)
         ndb.create_network(n1_context, {'network': n1_context.current})
@@ -1734,21 +1741,21 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
         ndb.create_network(n3_context, {'network': n3_context.current})
 
         # Create some networks in Arista db
-        db_lib.remember_network_segment('t1', 'n1', 10, 'segment_id_10')
-        db_lib.remember_network_segment('t2', 'n2', 20, 'segment_id_20')
-        db_lib.remember_network_segment('admin',
+        db_lib.remember_network_segment(ndb.admin_ctx, 't1', 'n1', 10, 'segment_id_10')
+        db_lib.remember_network_segment(ndb.admin_ctx, 't2', 'n2', 20, 'segment_id_20')
+        db_lib.remember_network_segment(ndb.admin_ctx, 'admin',
                                         'ha-network', 100, 'segment_id_100')
-        db_lib.remember_network_segment('t3', 'n3', 30, 'segment_id_30')
+        db_lib.remember_network_segment(ndb.admin_ctx, 't3', 'n3', 30, 'segment_id_30')
 
         # Initialize the driver which should clean up the extra networks
         self.drv.initialize()
 
-        adb_networks = db_lib.get_networks(tenant_id='any')
+        adb_networks = db_lib.get_networks(ndb.admin_ctx, tenant_id='any')
 
         # 'n3' should now be deleted from the Arista DB
         assert(set(('n1', 'n2', 'ha-network')) == set(adb_networks.keys()))
 
-    def _get_network_context(self, tenant_id, net_id, seg_id):
+    def _get_network_context(self, tenant_id, net_id, seg_id, context=None):
         network = {'id': net_id,
                    'tenant_id': tenant_id,
                    'name': net_id,
@@ -1758,9 +1765,9 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
         network_segments = [{'segmentation_id': seg_id,
                              'id': 'segment_%s' % net_id,
                              'network_type': 'vlan'}]
-        return FakeNetworkContext(network, network_segments, network)
+        return FakeNetworkContext(network, network_segments, network, context)
 
-    def _get_port_context(self, port_id, tenant_id, net_id, vm_id, network):
+    def _get_port_context(self, port_id, tenant_id, net_id, vm_id, network, context=None):
         port = {'device_id': vm_id,
                 'device_owner': 'compute',
                 'binding:host_id': 'ubuntu1',
@@ -1778,20 +1785,20 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
                                                        'vendor-1',
                                                        segment['id']))
         return FakePortContext(port, port, network, port['status'],
-                               binding_levels)
+                               binding_levels, context)
 
 
 class FakeNetworkContext(object):
     """To generate network context for testing purposes only."""
 
-    def __init__(self, network, segments=None, original_network=None):
+    def __init__(self, network, segments=None, original_network=None, context=None):
         self._network = network
         self._original_network = original_network
         self._segments = segments
         self.is_admin = False
         self.tenant_id = network['tenant_id']
         self.session = db.get_session()
-        self._plugin_context = FakePluginContext(self.tenant_id)
+        self._plugin_context = FakePluginContext(self.tenant_id) if context is None else context
 
     @property
     def current(self):
@@ -1818,8 +1825,8 @@ class FakePortContext(object):
     """To generate port context for testing purposes only."""
 
     def __init__(self, port, original_port, network, status,
-                 binding_levels):
-        self._plugin_context = None
+                 binding_levels, context=None):
+        self._plugin_context = context
         self._port = port
         self._original_port = original_port
         self._network_context = network
@@ -1882,6 +1889,7 @@ class FakePortBindingLevel(object):
         self.level = level
         self.driver = driver
         self.segment_id = segment_id
+        self.admin_ctx = neutron_context.get_admin_context()
 
 
 class SyncServiceTest(testlib_api.SqlTestCase):
@@ -1891,6 +1899,7 @@ class SyncServiceTest(testlib_api.SqlTestCase):
         super(SyncServiceTest, self).setUp()
         self.rpc = mock.MagicMock()
         ndb = db_lib.NeutronNets()
+        self.admin_ctx = ndb.admin_ctx
         self.sync_service = arista_ml2.SyncService(self.rpc, ndb)
         self.sync_service._force_sync = False
 
@@ -1925,8 +1934,8 @@ class SyncServiceTest(testlib_api.SqlTestCase):
         network_id = 'net-1'
         segmentation_id = 42
         segment_id = 'segment_id_1'
-        db_lib.remember_tenant(tenant_id)
-        db_lib.remember_network_segment(tenant_id, network_id, segmentation_id,
+        db_lib.remember_tenant(self.admin_ctx, tenant_id)
+        db_lib.remember_network_segment(self.admin_ctx, tenant_id, network_id, segmentation_id,
                                         segment_id)
 
         self.rpc.get_tenants.return_value = {}
@@ -1941,7 +1950,7 @@ class SyncServiceTest(testlib_api.SqlTestCase):
         self.sync_service.do_synchronize()
 
         expected_calls = [
-            mock.call.perform_sync_of_sg(),
+            mock.call.perform_sync_of_sg(self.sync_service._context),
             mock.call.check_cvx_availability(),
             mock.call.get_region_updated_time(),
             mock.call.sync_start(),
@@ -1965,8 +1974,8 @@ class SyncServiceTest(testlib_api.SqlTestCase):
                             )
                         )
 
-        db_lib.forget_network_segment(tenant_id, network_id)
-        db_lib.forget_tenant(tenant_id)
+        db_lib.forget_network_segment(self.admin_ctx, tenant_id, network_id)
+        db_lib.forget_tenant(self.admin_ctx, tenant_id)
 
     def test_synchronize_not_required(self):
         """Tests whether synchronize() sends the right commands.
@@ -1991,7 +2000,7 @@ class SyncServiceTest(testlib_api.SqlTestCase):
 
         # If the timestamps do match, then the sync should not be executed.
         expected_calls = [
-            mock.call.perform_sync_of_sg(self.context),
+            mock.call.perform_sync_of_sg(self.sync_service._context),
             mock.call.check_cvx_availability(),
             mock.call.get_region_updated_time(),
         ]
@@ -2010,15 +2019,15 @@ class SyncServiceTest(testlib_api.SqlTestCase):
         tenant_1_id = 'tenant-1'
         tenant_1_net_1_id = 'ten-1-net-1'
         tenant_1_net_1_seg_id = 11
-        db_lib.remember_tenant(tenant_1_id)
-        db_lib.remember_network_segment(tenant_1_id, tenant_1_net_1_id,
+        db_lib.remember_tenant(self.admin_ctx, tenant_1_id)
+        db_lib.remember_network_segment(self.admin_ctx, tenant_1_id, tenant_1_net_1_id,
                                         tenant_1_net_1_seg_id, 'segment_id_11')
 
         tenant_2_id = 'tenant-2'
         tenant_2_net_1_id = 'ten-2-net-1'
         tenant_2_net_1_seg_id = 21
-        db_lib.remember_tenant(tenant_2_id)
-        db_lib.remember_network_segment(tenant_2_id, tenant_2_net_1_id,
+        db_lib.remember_tenant(self.admin_ctx, tenant_2_id)
+        db_lib.remember_network_segment(self.admin_ctx, tenant_2_id, tenant_2_net_1_id,
                                         tenant_2_net_1_seg_id, 'segment_id_21')
 
         self.rpc.get_tenants.return_value = {
@@ -2047,7 +2056,7 @@ class SyncServiceTest(testlib_api.SqlTestCase):
         self.sync_service.do_synchronize()
 
         expected_calls = [
-            mock.call.perform_sync_of_sg(),
+            mock.call.perform_sync_of_sg(self.sync_service._context),
             mock.call.check_cvx_availability(),
             mock.call.get_region_updated_time(),
             mock.call.get_region_updated_time().__nonzero__(),
@@ -2075,10 +2084,10 @@ class SyncServiceTest(testlib_api.SqlTestCase):
                             )
                         )
 
-        db_lib.forget_network_segment(tenant_1_id, tenant_1_net_1_id)
-        db_lib.forget_network_segment(tenant_2_id, tenant_2_net_1_id)
-        db_lib.forget_tenant(tenant_1_id)
-        db_lib.forget_tenant(tenant_2_id)
+        db_lib.forget_network_segment(self.admin_ctx, tenant_1_id, tenant_1_net_1_id)
+        db_lib.forget_network_segment(self.admin_ctx, tenant_2_id, tenant_2_net_1_id)
+        db_lib.forget_tenant(self.admin_ctx, tenant_1_id)
+        db_lib.forget_tenant(self.admin_ctx, tenant_2_id)
 
     def test_synchronize_all_networks(self):
         """Test to ensure that only the required resources are sent to EOS."""
@@ -2088,15 +2097,15 @@ class SyncServiceTest(testlib_api.SqlTestCase):
         tenant_1_id = u'tenant-1'
         tenant_1_net_1_id = u'ten-1-net-1'
         tenant_1_net_1_seg_id = 11
-        db_lib.remember_tenant(tenant_1_id)
-        db_lib.remember_network_segment(tenant_1_id, tenant_1_net_1_id,
+        db_lib.remember_tenant(self.admin_ctx, tenant_1_id)
+        db_lib.remember_network_segment(self.admin_ctx, tenant_1_id, tenant_1_net_1_id,
                                         tenant_1_net_1_seg_id, 'segment_id_11')
 
         tenant_2_id = u'tenant-2'
         tenant_2_net_1_id = u'ten-2-net-1'
         tenant_2_net_1_seg_id = 21
-        db_lib.remember_tenant(tenant_2_id)
-        db_lib.remember_network_segment(tenant_2_id, tenant_2_net_1_id,
+        db_lib.remember_tenant(self.admin_ctx, tenant_2_id)
+        db_lib.remember_network_segment(self.admin_ctx, tenant_2_id, tenant_2_net_1_id,
                                         tenant_2_net_1_seg_id, 'segment_id_21')
 
         self.rpc.get_tenants.return_value = {}
@@ -2111,7 +2120,7 @@ class SyncServiceTest(testlib_api.SqlTestCase):
         self.sync_service.do_synchronize()
 
         expected_calls = [
-            mock.call.perform_sync_of_sg(),
+            mock.call.perform_sync_of_sg(self.sync_service._context),
             mock.call.check_cvx_availability(),
             mock.call.get_region_updated_time(),
             mock.call.get_region_updated_time().__nonzero__(),
@@ -2176,10 +2185,10 @@ class SyncServiceTest(testlib_api.SqlTestCase):
                             )
                         )
 
-        db_lib.forget_network_segment(tenant_1_id, tenant_1_net_1_id)
-        db_lib.forget_network_segment(tenant_2_id, tenant_2_net_1_id)
-        db_lib.forget_tenant(tenant_1_id)
-        db_lib.forget_tenant(tenant_2_id)
+        db_lib.forget_network_segment(self.admin_ctx, tenant_1_id, tenant_1_net_1_id)
+        db_lib.forget_network_segment(self.admin_ctx, tenant_2_id, tenant_2_net_1_id)
+        db_lib.forget_tenant(self.admin_ctx, tenant_1_id)
+        db_lib.forget_tenant(self.admin_ctx, tenant_2_id)
 
 
 class fake_keystone_info_class(object):

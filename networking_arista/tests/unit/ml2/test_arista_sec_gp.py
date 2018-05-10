@@ -55,7 +55,6 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         super(AristaSecGroupSwitchDriverTest, self).setUp()
         setup_config()
         self.fake_rpc = mock.MagicMock()
-        arista_sec_gp.db_lib = self.fake_rpc
 
         # Mock for maintain_connections
         patcher = patch('jsonrpclib.Server', new=FakeServerProxy)

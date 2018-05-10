@@ -2340,7 +2340,7 @@ class AristaNoCvxWrapperBase(AristaRPCWrapperBase,
                 'enable',
                 'configure',
                 'vlan %d' % vlan_id,
-                'name %s' % segment_id,
+                'name %s' % net_id,
                 'state active',
                 'exit'
             ]

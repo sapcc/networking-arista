@@ -115,7 +115,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
             'ip access-list SG-IN-test_security_group',
             'permit tcp any any established',
             'permit udp any eq 67 any eq 68',
-            'permit tcp 192.168.0.1/32 any range 22 1025 syn',
+            'permit tcp host 192.168.0.1 any range 22 1025 syn',
             'exit',
             'ip access-list SG-OUT-test_security_group',
             'permit tcp any any established',
@@ -213,7 +213,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         self.assertEqual(1, self.mock_sg_cmds.call_count, "expected to be called once")
         self.assertEqual([
             'ip access-list SG-IN-test_security_group', 'permit tcp any any established',
-            'permit tcp 192.168.0.1/32 any range 22 1025 syn',
+            'permit tcp host 192.168.0.1 any range 22 1025 syn',
             'no permit udp any range 0 65535 any range 32768 65535',
             'no permit tcp 100.100.0.0/16 any range 0 65535 syn', 'no permit icmp any any 0 0',
             'no permit icmp 100.100.0.0/16 any 0 0', 'no permit udp 100.100.0.0/16 any range 0 65535',
@@ -256,7 +256,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         self.assertEqual(2, self.mock_sg_cmds.call_count, "expected to be called twice")
         self.assertEqual([
             'ip access-list SG-IN-test_security_group', 'permit tcp any any established',
-            'permit tcp 192.168.0.1/32 any range 22 1025 syn',
+            'permit tcp host 192.168.0.1 any range 22 1025 syn',
             'no permit udp any range 0 65535 any range 32768 65535',
             'no permit tcp 100.100.0.0/16 any range 0 65535 syn', 'no permit icmp any any 0 0',
             'no permit icmp 100.100.0.0/16 any 0 0', 'no permit udp 100.100.0.0/16 any range 0 65535',
@@ -268,7 +268,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         self.assertEqual([
             'ip access-list SG-IN-test_security_group', 'permit tcp any any established',
             'permit udp any eq 67 any eq 68',
-            'permit tcp 192.168.0.1/32 any range 22 1025 syn',
+            'permit tcp host 192.168.0.1 any range 22 1025 syn',
             'exit', 'ip access-list SG-OUT-test_security_group',
             'permit tcp any any established',
             'no permit tcp any any range 0 65535 syn', 'no permit udp any any range 0 65535',

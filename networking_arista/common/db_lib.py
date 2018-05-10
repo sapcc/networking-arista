@@ -407,19 +407,16 @@ def get_all_baremetal_ports(context):
     query = session.query(ml2_models.PortBinding)
     bm_ports = query.filter_by(vnic_type='baremetal', vif_type='other').all()
 
-        return {bm_port.port_id: _make_port_dict(bm_port)
+    return {bm_port.port_id: _make_port_dict(bm_port)
             for bm_port in bm_ports}
 
 
-def get_all_portbindings():
+def get_all_portbindings(context):
     """Returns a list of all ports bindings."""
-    session = db.get_session()
-    with session.begin():
-        query = session.query(ml2_models.PortBinding)
-        ports = query.all()
-
-        return {port.port_id: _make_port_dict(port)
-                for port in ports}
+    session = context.session
+    ports = session.query(ml2_models.PortBinding).all()
+    return {port.port_id: _make_port_dict(port)
+            for port in ports}
 
 
 def get_port_binding_level(context, filters):

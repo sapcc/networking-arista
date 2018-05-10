@@ -208,7 +208,8 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
             {'port_id': 'PORTID123456789', 'security_group_id': 'test_security_group'}]
         self.fake_rpc.get_security_groups.return_value = {'test_security_group': sg}
 
-        self.drv.perform_sync_of_sg()
+        context = mock.MagicMock()
+        self.drv.perform_sync_of_sg(context)
         self.assertEqual(1, self.mock_sg_cmds.call_count, "expected to be called once")
         self.assertEqual([
             'ip access-list SG-IN-test_security_group', 'permit tcp any any established',
@@ -250,8 +251,8 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         self.fake_rpc.get_all_security_gp_to_port_bindings.return_value = [
             {'port_id': 'PORTID123456789', 'security_group_id': 'test_security_group'}]
         self.fake_rpc.get_security_groups.return_value = {'test_security_group': sg}
-
-        self.drv.perform_sync_of_sg()
+        context = mock.MagicMock()
+        self.drv.perform_sync_of_sg(context)
         self.assertEqual(2, self.mock_sg_cmds.call_count, "expected to be called twice")
         self.assertEqual([
             'ip access-list SG-IN-test_security_group', 'permit tcp any any established',

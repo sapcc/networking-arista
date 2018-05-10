@@ -681,8 +681,7 @@ class AristaDriver(driver_api.MechanismDriver):
 
         hostname = self._host_name(host)
         port_host_filter = None
-        if(port['device_owner'] ==
-           n_const.DEVICE_OWNER_DVR_INTERFACE):
+        if port['device_owner'] == n_const.DEVICE_OWNER_DVR_INTERFACE:
             # <port, host> uniquely identifies a DVR port. Other
             # ports are identified by just the port id
             port_host_filter = host
@@ -691,10 +690,10 @@ class AristaDriver(driver_api.MechanismDriver):
                                                       port_host_filter)
         # If network does not exist under this tenant,
         # it may be a shared network. Get shared network owner Id
-        net_provisioned = self._network_provisioned(plugin_context,
-            tenant_id, network_id)
+        net_provisioned = self._network_provisioned(context, 
+                                                    tenant_id, network_id)
         for seg in seg_info:
-            if not self._network_provisioned(plugin_context, tenant_id, network_id,
+            if not self._network_provisioned(context, tenant_id, network_id,
                                              segmentation_id=seg[driver_api.SEGMENTATION_ID]):
                 net_provisioned = False
                 break
@@ -728,13 +727,13 @@ class AristaDriver(driver_api.MechanismDriver):
                     # The port moved to a different host or the VM
                     # connected to the port was deleted or its in DOWN
                     # state. So delete the old port on the old host.
-                    self._delete_port(plugin_context, orig_port, orig_host, tenant_id,
+                    self._delete_port(context, orig_port, orig_host, tenant_id,
                                           segments=segments)
                 except ml2_exc.MechanismDriverError:
                     # If deleting a port fails, then not much can be done
                     # about it. Log a warning and move on.
                     LOG.warning(UNABLE_TO_DELETE_PORT_MSG)
-            if port_provisioned and net_provisioned and hostname and
+            if port_provisioned and net_provisioned and hostname and \
                     is_vm_boot and not port_down:
                 LOG.info(_LI("Port plugged into network"))
                 # Plug port into the network only if it exists in the db
@@ -766,7 +765,6 @@ class AristaDriver(driver_api.MechanismDriver):
             # Ignoring the update as the port is not managed by
             # arista mechanism driver.
             return
-
 
         port = context.current
         pretty_log("delete_port_precommit:", port)
@@ -803,13 +801,11 @@ class AristaDriver(driver_api.MechanismDriver):
         # If this port is the last one using dynamic segmentation id,
         # and the segmentation id was allocated by this driver, it needs
         # to be released.
-        plugin_context = context._plugin_context
-
-        self._try_to_release_dynamic_segment(plugin_context)
+        self._try_to_release_dynamic_segment(context)
 
         try:
-            self._delete_port(plugin_context, port, host, tenant_id, segments=seg_info)
-            self._delete_segment(plugin_context, tenant_id)
+            self._delete_port(context, port, host, tenant_id, segments=seg_info)
+            self._delete_segment(context, tenant_id)
         except ml2_exc.MechanismDriverError:
             # Can't do much if deleting a port failed.
             # Log a warning and continue.
@@ -876,7 +872,7 @@ class AristaDriver(driver_api.MechanismDriver):
         plugin_context = context._plugin_context
         for binding_level in context._binding_levels:
             LOG.debug("deleting segment %s", binding_level.segment_id)
-            if self._network_provisioned(plugin_context, tenant_id, network_id,
+            if self._network_provisioned(context, tenant_id, network_id,
                                          segment_id=binding_level.segment_id):
                 segment = self.ndb.get_segment_by_id(
                     plugin_context.session, binding_level.segment_id)
@@ -988,12 +984,12 @@ class AristaDriver(driver_api.MechanismDriver):
             self.timer.stop()
             self.timer = None
 
-    @enginefacade.writer
+    # @enginefacade.writer
     def _cleanup_db(self, context):
         """Clean up any unnecessary entries in our DB."""
 
         session = context.session
-        with session.begin():
+        with session.begin(subtransactions=True):
             arista_vms = db.AristaProvisionedVms
             arista_nets = db.AristaProvisionedNets
 

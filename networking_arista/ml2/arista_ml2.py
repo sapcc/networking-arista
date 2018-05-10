@@ -2043,7 +2043,7 @@ class SyncService(object):
 
         self._set_region_updated_time()
 
-    @enginefacade.reader
+    # @enginefacade.reader
     def synchronize(self, context):
         """Sends data to EOS which differs from neutron DB."""
 
@@ -2083,7 +2083,7 @@ class SyncService(object):
         )
 
         # Get Baremetal port switch_bindings, if any
-        port_profiles = db_lib.get_all_portbindings()
+        port_profiles = db_lib.get_all_portbindings(context)
         # To support shared networks, split the sync loop in two parts:
         # In first loop, delete unwanted VM and networks and update networks
         # In second loop, update VMs. This is done to ensure that networks for
@@ -2439,7 +2439,7 @@ class AristaNoCvxWrapperBase(AristaRPCWrapperBase,
         pass
 
     def create_instance_bulk(self, tenant_id, neutron_ports, vms,
-                             bm_port_profiles, sync=False):
+                             port_profiles, sync=False):
         pass
 
     def delete_instance_bulk(self, tenant_id, instance_id_list, instance_type,

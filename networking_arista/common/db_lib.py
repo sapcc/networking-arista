@@ -469,8 +469,8 @@ class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,
     They are pulled from Neutron DB.
     """
 
-    def __init__(self):
-        self.admin_ctx = nctx.get_admin_context()
+    def __init__(self, context=None):
+        self.admin_ctx = context or nctx.get_admin_context()
 
     def get_network_name(self, tenant_id, network_id):
         network = self._get_network(tenant_id, network_id)
@@ -487,8 +487,9 @@ class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,
     def get_all_networks(self):
         return super(NeutronNets, self).get_networks(self.admin_ctx) or []
 
-    def get_all_ports(self):
-        return super(NeutronNets, self).get_ports(self.admin_ctx) or []
+    def get_all_ports(self, filters=None):
+        return super(NeutronNets, self).get_ports(self.admin_ctx,
+                                                  filters=filters) or []
 
     def get_all_ports_for_tenant(self, tenant_id):
         filters = {'tenant_id': [tenant_id]}

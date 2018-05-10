@@ -19,7 +19,7 @@ from oslo_config import cfg
 from oslo_service import loopingcall
 from oslo_log import log as logging
 
-from neutron.common import constants as n_const
+from neutron.common import constants as n_const, config as common_config
 from neutron.db import securitygroups_db as sg_db, models_v2
 from neutron.extensions import portbindings
 from neutron.plugins.common import constants as p_const
@@ -86,6 +86,9 @@ class AristaDriver(driver_api.MechanismDriver):
             elif api_type == 'JSON':
                 LOG.info("Using JSON for RPC")
                 self.rpc = arista_ml2.AristaRPCWrapperJSON(self.ndb)
+            elif api_type == 'NOCVX':
+                self.rpc = arista_ml2.AristaNoCvxWrapperBase(self.ndb)
+                self.eapi = self.rpc
             else:
                 msg = "RPC mechanism %s not recognized" % api_type
                 LOG.error(msg)
@@ -112,11 +115,13 @@ class AristaDriver(driver_api.MechanismDriver):
 
         network = context.current
         segments = context.network_segments
+
         if not self.rpc.hpb_supported():
             # Hierarchical port binding is not supported by CVX, only
             # allow VLAN network type.
             if segments[0][driver_api.NETWORK_TYPE] != p_const.TYPE_VLAN:
                 return
+
         network_id = network['id']
         tenant_id = network['tenant_id'] or INTERNAL_TENANT_ID
         with self.eos_sync_lock:
@@ -491,7 +496,8 @@ class AristaDriver(driver_api.MechanismDriver):
                         segment_id=binding_level.segment_id):
                     with self.eos_sync_lock:
                         # Removing the port form original host
-                        self._delete_port(orig_port, orig_host, tenant_id)
+                        self._delete_port(orig_port, orig_host, tenant_id,
+                                          segments=[binding_level])
 
                         # If segment id is not bound to any port, then
                         # remove it from EOS
@@ -717,12 +723,13 @@ class AristaDriver(driver_api.MechanismDriver):
                         # The port moved to a different host or the VM
                         # connected to the port was deleted or its in DOWN
                         # state. So delete the old port on the old host.
-                        self._delete_port(orig_port, orig_host, tenant_id)
+                        self._delete_port(orig_port, orig_host, tenant_id,
+                                          segments=segments)
                     except ml2_exc.MechanismDriverError:
                         # If deleting a port fails, then not much can be done
                         # about it. Log a warning and move on.
                         LOG.warning(UNABLE_TO_DELETE_PORT_MSG)
-                if(port_provisioned and net_provisioned and hostname and
+                if (port_provisioned and net_provisioned and hostname and
                    is_vm_boot and not port_down):
                     LOG.info(_LI("Port plugged into network"))
                     # Plug port into the network only if it exists in the db
@@ -789,20 +796,20 @@ class AristaDriver(driver_api.MechanismDriver):
         pretty_log("delete_port_postcommit:", port)
 
         # If this port is the last one using dynamic segmentation id,
-        # and the segmentaion id was alloated by this driver, it needs
-        # to be releaed.
+        # and the segmentation id was alloated by this driver, it needs
+        # to be released.
         self._try_to_release_dynamic_segment(context)
 
         with self.eos_sync_lock:
             try:
-                self._delete_port(port, host, tenant_id)
+                self._delete_port(port, host, tenant_id, segments=seg_info)
                 self._delete_segment(context, tenant_id)
             except ml2_exc.MechanismDriverError:
                 # Can't do much if deleting a port failed.
                 # Log a warning and continue.
                 LOG.warning(UNABLE_TO_DELETE_PORT_MSG)
 
-    def _delete_port(self, port, host, tenant_id):
+    def _delete_port(self, port, host, tenant_id, segments=None):
         """Deletes the port from EOS.
 
         param port: Port which is to be deleted
@@ -834,7 +841,8 @@ class AristaDriver(driver_api.MechanismDriver):
             self.rpc.unplug_port_from_network(device_id, device_owner,
                                               hostname, port_id, network_id,
                                               tenant_id, sg, vnic_type,
-                                              switch_bindings=switch_bindings)
+                                              switch_bindings=switch_bindings,
+                                              segments=segments)
             self.rpc.remove_security_group(sg, switch_bindings)
 
             # if necessary, delete tenant as well.
@@ -891,9 +899,12 @@ class AristaDriver(driver_api.MechanismDriver):
         If this port is the last port using the segmentation id allocated
         by the driver, it should be released
         """
-        host = context.original_host if migration else context.host
+        if migration:
+            host = context.original_host
+        else:
+            host = context.host
 
-        physnet_info = self.eapi.get_physical_network(host)
+        physnet_info = self.eapi.get_physical_network(host, context=context)
         physnet = physnet_info.get('physnet')
         if not physnet:
             return
@@ -1050,3 +1061,88 @@ class AristaDriver(driver_api.MechanismDriver):
             db.AristaProvisionedVms, db.AristaProvisionedVms.port_id == port_id
         ).first()
         return result is not None
+
+
+def cli():
+    import sys
+    import json
+    from oslo_config import cfg
+    from neutron.context import get_admin_context
+    from neutron.plugins.ml2.models import PortBinding, PortBindingLevel, NetworkSegment
+    from neutron.db.models_v2 import Port
+    from sqlalchemy.orm import joinedload, subqueryload, relationship, backref
+
+    config.CONF.register_cli_opts([
+        cfg.MultiStrOpt('port_id',
+                        short='p',
+                        default=[],
+                        help=''),
+    ])
+    common_config.init(sys.argv[1:])
+
+    context = get_admin_context()
+    ndb = db_lib.NeutronNets(context=context)
+    confg = config.CONF.ml2_arista
+    managed_physnets = confg['managed_physnets']
+
+    api_type = confg['api_type'].upper()
+    if api_type == 'EAPI':
+        LOG.info("Using EAPI for RPC")
+        rpc = arista_ml2.AristaRPCWrapperEapi(ndb)
+    elif api_type == 'JSON':
+        LOG.info("Using JSON for RPC")
+        rpc = arista_ml2.AristaRPCWrapperJSON(ndb)
+    elif api_type == 'NOCVX':
+        rpc = arista_ml2.AristaNoCvxWrapperBase(ndb)
+    else:
+        msg = "RPC mechanism %s not recognized" % api_type
+        LOG.error(msg)
+        raise arista_exc.AristaRpcError(msg=msg)
+
+    PortBindingLevel.port = relationship(Port,
+        backref=backref("port_binding_levels"))
+
+    PortBindingLevel.segment = relationship(NetworkSegment)
+
+    with context.session.begin():
+        session = context.session
+        for port in session.query(Port). \
+                options(joinedload(Port.port_binding)).\
+                options(joinedload(Port.security_groups)).\
+                options(subqueryload(Port.port_binding_levels).subqueryload(PortBindingLevel.segment)).\
+                filter(models_v2.Port.id.in_(config.CONF.port_id)):
+            port_id = port.id
+            device_id = port.device_id
+            network_id = port.network_id
+            port_name = port.name
+            device_owner = port.device_owner
+            binding = port.port_binding
+            hostname = binding.host
+            vnic_type = binding.vnic_type
+            orig_sg = None
+            tenant_id = port.tenant_id
+            sg = [ sg.security_group_id for sg in port.security_groups ]
+            binding_profile = json.loads(binding.profile)
+            bindings = binding_profile.get('local_link_information', [])
+            vlan_type = binding_profile.get('vlan_type', 'native')
+            segments = [ {'id': level.segment_id, 'level': level.level,
+                          'physical_network': level.segment.physical_network,
+                          'segmentation_id': level.segment.segmentation_id,
+                          'network_type': level.segment.network_type,
+                          'is_dynamic':  level.segment.is_dynamic,
+                          }
+                         for level in port.port_binding_levels
+                         if level.driver == 'arista'
+                         ]
+            rpc.plug_port_into_network(device_id,
+                                   hostname,
+                                   port_id,
+                                   network_id,
+                                   tenant_id,
+                                   port_name,
+                                   device_owner,
+                                   sg, orig_sg,
+                                   vnic_type,
+                                   segments=segments,
+                                   switch_bindings=bindings,
+                                   vlan_type=vlan_type)

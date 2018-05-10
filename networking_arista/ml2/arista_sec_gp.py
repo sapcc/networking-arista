@@ -108,30 +108,18 @@ acl_cmd = {  # For a rule 0: protocol, 1: cidr, 2: from_port, 3: to_port, 4: fla
                             'exit']}}
 
 
-class AristaSecGroupSwitchDriver(object):
-    """Wraps Arista JSON RPC.
-
-    All communications between Neutron and EOS are over JSON RPC.
-    EOS - operating system used on Arista hardware
-    Command API - JSON RPC API provided by Arista EOS
-    """
-
-    def __init__(self, neutron_db):
-        self._ndb = neutron_db
+class AristaSwitchRPCMixin(object):
+    def __init__(self, *args, **kwargs):
+        super(AristaSwitchRPCMixin, self).__init__()
         self._server_by_id = dict()
         self._server_by_ip = dict()
-        self.sg_enabled = cfg.CONF.ml2_arista.get('sec_group_support')
-        self._validate_config()
-        self._maintain_connections()
-        self._statsd = STATS
-        self.max_rules = cfg.CONF.ml2_arista.get('lossy_consolidation_limit')
-        self._protocol_table = {
-            num: name[8:] for name, num in vars(socket).items()
-            if name.startswith("IPPROTO")
-        }
 
-        self.aclCreateDict = acl_cmd['acl']
-        self.aclApplyDict = acl_cmd['apply']
+    def _validate_config(self, reason=''):
+        if len(cfg.CONF.ml2_arista.get('switch_info')) < 1:
+            msg = _('Required option - %s, '
+                    'at least one switch must be specified ') % reason
+            LOG.exception(msg)
+            raise arista_exc.AristaConfigError(msg=msg)
 
     def _maintain_connections(self):
         for s in cfg.CONF.ml2_arista.switch_info:
@@ -149,25 +137,44 @@ class AristaSecGroupSwitchDriver(object):
                 transport.context = ssl._create_unverified_context()
             server = jsonrpclib.Server(eapi_server_url, transport=transport)
             try:
-                ret = server.runCmds(version=1, cmds=["show lldp local-info management 1"])
-                system_id = EUI(ret[0]['chassisId'])
+                ret = server.runCmds(version=1,
+                                     cmds=['show lldp local-info management 1']
+                                     )[0]
+                system_id = EUI(ret['chassisId'])
                 self._server_by_id[system_id] = server
                 self._server_by_ip[switch_ip] = server
             except (socket.error, HTTPException) as e:
                 LOG.warn("Could not connect to server %s due to %s", switch_ip, e)
 
-    def _get_server(self, switch_info, switch_id):
+    def _get_server(self, switch_info=None, switch_id=None):
         return self._server_by_ip.get(switch_info) \
                or self._server_by_id.get(EUI(switch_id))
 
-    def _validate_config(self):
+
+class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
+    """Wraps Arista JSON RPC.
+
+    All communications between Neutron and EOS are over JSON RPC.
+    EOS - operating system used on Arista hardware
+    Command API - JSON RPC API provided by Arista EOS
+    """
+    def __init__(self, neutron_db):
+        super(AristaSecGroupSwitchDriver, self).__init__()
+        self._ndb = neutron_db
+        self.sg_enabled = cfg.CONF.ml2_arista.get('sec_group_support')
         if not self.sg_enabled:
             return
-        if len(cfg.CONF.ml2_arista.get('switch_info')) < 1:
-            msg = _('Required option - when "sec_group_support" is enabled, '
-                    'at least one switch must be specified ')
-            LOG.exception(msg)
-            raise arista_exc.AristaConfigError(msg=msg)
+
+        self._validate_config(_('when "sec_group_support" is enabled'))
+        self._statsd = STATS
+        self.max_rules = cfg.CONF.ml2_arista.get('lossy_consolidation_limit')
+
+        self._protocol_table = {
+            num: name[8:] for name, num in vars(socket).items()
+            if name.startswith("IPPROTO")
+        }
+        self.aclCreateDict = acl_cmd['acl']
+        self.aclApplyDict = acl_cmd['apply']
 
     def _get_port_name(self, port, protocol=None):
         try:
@@ -657,6 +664,8 @@ class AristaSecGroupSwitchDriver(object):
         if not self.sg_enabled or not sg:
             return
 
+        self._maintain_connections()
+
         security_group_id = sg['id']
         security_group_rules = list(sg['security_group_rules'])
 
@@ -785,8 +794,10 @@ class AristaSecGroupSwitchDriver(object):
             name = self._arista_acl_name(sgs, dir)
             try:
                 self._remove_acl_from_eos(port_id, name, dir, server)
-            except Exception:
-                msg = (_('Failed to remove ACL on port %s') % port_id)
+            except Exception as e:
+                msg = _('Failed to remove ACL on port %s due to %s') % (
+                    port_id,
+                    e.message)
                 LOG.exception(msg)
                 # No need to raise exception for ACL removal
                 # raise arista_exc.AristaSecurityGroupError(msg=msg)

@@ -870,8 +870,6 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         if not self.sg_enabled:
             return
 
-        return
-
         self._maintain_connections()
 
         arista_ports = db_lib.get_ports(context)

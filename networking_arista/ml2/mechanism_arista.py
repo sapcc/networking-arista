@@ -13,12 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import threading
-
 from oslo_config import cfg
 from oslo_service import loopingcall
 from oslo_log import log as logging
 from oslo_db.sqlalchemy import enginefacade
+from oslo_context.context import get_current as get_current_context
 
 from neutron.common import constants as n_const, config as common_config
 from neutron.db import securitygroups_db as sg_db, models_v2
@@ -103,7 +102,8 @@ class AristaDriver(driver_api.MechanismDriver):
             self.rpc.register_with_eos()
             self.rpc.check_supported_features()
 
-        self._cleanup_db(self.ndb.admin_ctx)
+        context = get_current_context()
+        self._cleanup_db(context)
         # Registering with EOS updates self.rpc.region_updated_time. Clear it
         # to force an initial sync
         self.rpc.clear_region_updated_time()
@@ -403,7 +403,8 @@ class AristaDriver(driver_api.MechanismDriver):
         if network_id and tenant_id:
             plugin_context = context._plugin_context
             network_owner = self.ndb.get_network_from_net_id(
-                network_id, context=plugin_context
+                plugin_context,
+                network_id
             )
             if network_owner and network_owner[0]['tenant_id'] != tenant_id:
                 tid = network_owner[0]['tenant_id'] or tenant_id
@@ -987,7 +988,6 @@ class AristaDriver(driver_api.MechanismDriver):
     # @enginefacade.writer
     def _cleanup_db(self, context):
         """Clean up any unnecessary entries in our DB."""
-
         session = context.session
         with session.begin(subtransactions=True):
             arista_vms = db.AristaProvisionedVms

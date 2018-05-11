@@ -260,7 +260,7 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 if p['device_id'] == r['id']:
                     net_id = p['network_id']
                     subnet_id = p['fixed_ips'][0]['subnet_id']
-                    subnet = self.ndb.get_subnet_info(subnet_id)
+                    subnet = self.ndb.get_subnet_info(ctxt, subnet_id)
                     ml2_db = NetworkContext(self, ctx, {'id': net_id})
                     seg_id = ml2_db.network_segments[0]['segmentation_id']
 

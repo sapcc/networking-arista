@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from neutron import context as nctx
 from neutron.db import db_base_plugin_v2
 from neutron.db.securitygroups_rpc_base import SecurityGroupServerRpcMixin
 from neutron.plugins.common import constants as p_const
@@ -22,7 +21,6 @@ from neutron.plugins.ml2 import driver_api
 from neutron.plugins.ml2 import models as ml2_models
 from networking_arista.common import db as db_models
 from sqlalchemy import literal
-from threading import Lock
 
 VLAN_SEGMENTATION = 'vlan'
 
@@ -451,16 +449,8 @@ class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,
     They are pulled from Neutron DB.
     """
 
-    def __init__(self, context=None):
-        self.admin_ctx = context or nctx.get_admin_context()
-        self.lock = Lock()
-
-    def get_network_name(self, tenant_id, network_id):
-        network = self._get_network(tenant_id, network_id)
-        network_name = None
-        if network:
-            network_name = network[0]['name']
-        return network_name
+    def __init__(self):
+        pass
 
     def get_all_networks_for_tenant(self, context, tenant_id):
         filters = {'tenant_id': [tenant_id]}
@@ -508,56 +498,18 @@ class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,
         return segments_db.get_segment_by_id(session,
                                              segment_id)
 
-    def get_network_from_net_id(self, network_id, context=None):
+    def get_network_from_net_id(self, context, network_id):
         filters = {'id': [network_id]}
-        if context:
-            return super(NeutronNets,
-                         self).get_networks(context,
-                                            filters=filters) or []
-        else:
-            with self.lock:
-                return super(NeutronNets,self).\
-                           get_networks(self.admin_ctx, filters=filters) or []
+        return super(NeutronNets,
+                     self).get_networks(context,
+                                        filters=filters) or []
 
-    def _get_network(self, tenant_id, network_id):
-        filters = {'tenant_id': [tenant_id],
-                   'id': [network_id]}
-        with self.lock:
-            return super(NeutronNets, self).\
-                       get_networks(self.admin_ctx, filters=filters) or []
+    def get_subnet_info(self, context, subnet_id):
+        return self.get_subnet(context, subnet_id)
 
-    def get_subnet_info(self, subnet_id):
-        return self.get_subnet(subnet_id)
-
-    def get_subnet_ip_version(self, subnet_id):
-        subnet = self.get_subnet(subnet_id)
-        return subnet['ip_version'] if 'ip_version' in subnet else None
-
-    def get_subnet_gateway_ip(self, subnet_id):
-        subnet = self.get_subnet(subnet_id)
-        return subnet['gateway_ip'] if 'gateway_ip' in subnet else None
-
-    def get_subnet_cidr(self, subnet_id):
-        subnet = self.get_subnet(subnet_id)
-        return subnet['cidr'] if 'cidr' in subnet else None
-
-    def get_network_id(self, subnet_id):
-        subnet = self.get_subnet(subnet_id)
-        return subnet['network_id'] if 'network_id' in subnet else None
-
-    def get_network_id_from_port_id(self, port_id):
-        port = self.get_port(port_id)
-        return port['network_id'] if 'network_id' in port else None
-
-    def get_subnet(self, subnet_id):
-        with self.lock:
-            return super(NeutronNets, self).\
-                       get_subnet(self.admin_ctx, subnet_id) or {}
-
-    def get_port(self, port_id):
-        with self.lock:
-            return super(NeutronNets, self).\
-                       get_port(self.admin_ctx, port_id) or {}
+    def get_subnet(self, context, subnet_id):
+        return super(NeutronNets, self).\
+                   get_subnet(context, subnet_id) or {}
 
     def get_all_security_gp_to_port_bindings(self, context, filters=None):
         return super(NeutronNets, self)._get_port_security_group_bindings(
@@ -567,11 +519,6 @@ class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,
         filters = {'security_group_id': [sec_gp_id]}
         return super(NeutronNets, self)._get_port_security_group_bindings(
             context, filters=filters) or []
-
-    def get_security_group(self, sec_gp_id):
-        with self.lock:
-            return super(NeutronNets, self).\
-                       get_security_group(self.admin_ctx, sec_gp_id) or []
 
     def get_security_groups(self, context, filters=None):
         sgs = super(NeutronNets,

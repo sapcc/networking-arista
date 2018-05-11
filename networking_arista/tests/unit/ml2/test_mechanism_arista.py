@@ -40,7 +40,6 @@ class AristaDriverTestCase(testlib_api.SqlTestCase):
         patcher = mock.patch('networking_arista.ml2.mechanism_arista.db_lib', new=self.fake_rpc).start()
         self.addCleanup(patcher.stop)
         self.drv.ndb = mock.MagicMock()
-        self.admin_ctx = neutron_context.get_admin_context()
 
     def tearDown(self):
         super(AristaDriverTestCase, self).tearDown()

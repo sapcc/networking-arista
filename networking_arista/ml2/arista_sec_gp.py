@@ -29,6 +29,7 @@ from netaddr import EUI, IPSet, IPNetwork
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils.importutils import try_import
+from oslo_context.context import get_current as get_current_context
 
 from networking_arista._i18n import _, _LI
 from networking_arista.common import db_lib
@@ -398,7 +399,9 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         elif remote_group_id:
             security_group_ips = security_group_ips or {}
             if remote_group_id not in security_group_ips:
-                fetched = self._ndb._select_ips_for_remote_group(self._ndb.admin_ctx, [remote_group_id])
+                context = get_current_context()
+                fetched = self._ndb._select_ips_for_remote_group(context,
+                                                                 [remote_group_id])
                 security_group_ips.update(fetched)
 
             remote_ips = security_group_ips[remote_group_id]

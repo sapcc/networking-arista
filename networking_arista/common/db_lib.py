@@ -33,7 +33,8 @@ def remember_tenant(context, tenant_id):
     """
     session = context.session
     with session.begin(subtransactions=True):
-        # TODO: There is no guarantee for tenant_id being unique, add constraint to table
+        # Tenant might not be unique, but then we just have duplicates in the
+        # "set".
         tenant = (session.query(db_models.AristaProvisionedTenants).
                   filter_by(tenant_id=tenant_id).first())
         if not tenant:
@@ -81,7 +82,7 @@ def remember_vm(context, vm_id, host_id, port_id, network_id, tenant_id):
     :param tenant_id: globally unique neutron tenant identifier
     """
     session = context.session
-    with session.begin():
+    with session.begin(subtransactions=True):
         vm = db_models.AristaProvisionedVms(
             vm_id=vm_id,
             host_id=host_id,
@@ -110,15 +111,14 @@ def update_port(context, vm_id, host_id, port_id, network_id, tenant_id):
     :param tenant_id: globally unique neutron tenant identifier
     """
     session = context.session
-    with session.begin():
-        port = session.query(db_models.AristaProvisionedVms).filter_by(
-            port_id=port_id).first()
-        if port:
-            # Update the VM's host id
-            port.host_id = host_id
-            port.vm_id = vm_id
-            port.network_id = network_id
-            port.tenant_id = tenant_id
+    port = session.query(db_models.AristaProvisionedVms).filter_by(
+        port_id=port_id).first()
+    if port:
+        # Update the VM's host id
+        port.host_id = host_id
+        port.vm_id = vm_id
+        port.network_id = network_id
+        port.tenant_id = tenant_id
 
 
 def forget_port(context, port_id, host_id):
@@ -142,7 +142,7 @@ def remember_network_segment(context, tenant_id,
     :param segment_id: globally unique neutron network segment identifier
     """
     session = context.session
-    with session.begin():
+    with session.begin(subtransactions=True):
         net = db_models.AristaProvisionedNets(
             tenant_id=tenant_id,
             id=segment_id,
@@ -428,14 +428,13 @@ def get_port_binding_level(context, filters):
 
 def get_network_segments_by_port_id(context, port_id):
     session = context.session
-    with session.begin():
-        segments = (session.query(ml2_models.NetworkSegment,
-                                  ml2_models.PortBindingLevel).
-                    join(ml2_models.PortBindingLevel).
-                    filter_by(port_id=port_id).
-                    order_by(ml2_models.PortBindingLevel.level).
-                    all())
-        return [segment[0] for segment in segments]
+    segments = (session.query(ml2_models.NetworkSegment,
+                              ml2_models.PortBindingLevel).
+                join(ml2_models.PortBindingLevel).
+                filter_by(port_id=port_id).
+                order_by(ml2_models.PortBindingLevel.level).
+                all())
+    return [segment[0] for segment in segments]
 
 
 class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,

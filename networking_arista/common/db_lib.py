@@ -32,7 +32,7 @@ def remember_tenant(context, tenant_id):
     :param tenant_id: globally unique neutron tenant identifier
     """
     session = context.session
-    with session.begin():
+    with session.begin(subtransactions=True):
         # TODO: There is no guarantee for tenant_id being unique, add constraint to table
         tenant = (session.query(db_models.AristaProvisionedTenants).
                   filter_by(tenant_id=tenant_id).first())

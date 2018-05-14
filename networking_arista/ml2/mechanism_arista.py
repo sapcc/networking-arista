@@ -17,7 +17,6 @@ from oslo_config import cfg
 from oslo_service import loopingcall
 from oslo_log import log as logging
 from oslo_db.sqlalchemy import enginefacade
-from oslo_context.context import get_current as get_current_context
 
 from neutron.common import constants as n_const, config as common_config
 from neutron.db import securitygroups_db as sg_db, models_v2
@@ -25,6 +24,8 @@ from neutron.extensions import portbindings
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2 import driver_api
 from neutron.plugins.ml2.common import exceptions as ml2_exc
+
+import neutron.context as neutron_context
 
 from networking_arista._i18n import _, _LI, _LE
 from networking_arista.common import config  # noqa
@@ -102,7 +103,7 @@ class AristaDriver(driver_api.MechanismDriver):
             self.rpc.register_with_eos()
             self.rpc.check_supported_features()
 
-        context = get_current_context()
+        context = neutron_context.get_admin_context()
         self._cleanup_db(context)
         # Registering with EOS updates self.rpc.region_updated_time. Clear it
         # to force an initial sync

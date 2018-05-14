@@ -372,7 +372,8 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
         self._run_openstack_sg_cmds(cmds, server)
 
-    def _create_acl_rule(self, in_cmds, out_cmds, sgr, security_group_ips=None):
+    def _create_acl_rule(self, context, in_cmds, out_cmds, sgr,
+                         security_group_ips=None):
         """Creates an ACL on Arista Switch.
 
         For a given Security Group (ACL), it adds additional rule
@@ -382,7 +383,8 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         if not sgr or sgr['protocol'] not in SUPPORTED_SG_PROTOCOLS:
             return in_cmds, out_cmds
 
-        if sgr['ethertype'] is not None and sgr['ethertype'] not in SUPPORTED_SG_ETHERTYPES:
+        if sgr['ethertype'] is not None \
+                and sgr['ethertype'] not in SUPPORTED_SG_ETHERTYPES:
             return in_cmds, out_cmds
 
         if sgr['protocol'] is None:
@@ -399,7 +401,6 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         elif remote_group_id:
             security_group_ips = security_group_ips or {}
             if remote_group_id not in security_group_ips:
-                context = get_current_context()
                 fetched = self._ndb._select_ips_for_remote_group(context,
                                                                  [remote_group_id])
                 security_group_ips.update(fetched)
@@ -423,7 +424,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                                                             sgr['direction'])
         return in_cmds, out_cmds
 
-    def create_acl_rule(self, sgr):
+    def create_acl_rule(self, context, sgr):
         """Creates an ACL on Arista Switch.
 
         For a given Security Group (ACL), it adds additional rule
@@ -438,7 +439,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         cmds = []
         for c in self.aclCreateDict['create']:
             cmds.append(c.format(name))
-        in_cmds, out_cmds = self._create_acl_rule(cmds, cmds, sgr)
+        in_cmds, out_cmds = self._create_acl_rule(context, cmds, cmds, sgr)
 
         cmds = in_cmds
         if sgr['direction'] == 'egress':
@@ -658,7 +659,8 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         }
         return "{action} {protocol} {src} {dst} {flags}".format(**prop).strip()
 
-    def create_acl(self, sg, security_group_ips=None, existing_acls=None):
+    def create_acl(self, context, sg,
+                   security_group_ips=None, existing_acls=None):
         """Creates an ACL on Arista Switch.
 
         Deals with multiple configurations - such as multiple switches
@@ -677,6 +679,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         cmds = {'ingress': [], 'egress': []}
         for sgr in security_group_rules:
             cmds['ingress'], cmds['egress'] = self._create_acl_rule(
+                context,
                 cmds['ingress'], cmds['egress'], sgr,
                 security_group_ips=security_group_ips
             )
@@ -936,7 +939,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
             for direction in DIRECTIONS:
                 known_acls.add(self._arista_acl_name(sg['id'], direction))
-            self.create_acl(sg,
+            self.create_acl(context, sg,
                             security_group_ips=security_group_ips,
                             existing_acls=existing_acls)
 

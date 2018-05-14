@@ -267,12 +267,12 @@ class AristaRPCWrapperBase(object):
                 LOG.warning(msg)
         # raise arista_exc.AristaSecurityGroupError(msg=msg)
 
-    def create_acl(self, sg):
+    def create_acl(self, context, sg):
         """Creates an ACL on Arista Switch.
 
         Deals with multiple configurations - such as multiple switches
         """
-        self.security_group_driver.create_acl(sg)
+        self.security_group_driver.create_acl(context, sg)
 
     def delete_acl(self, sg):
         """Deletes an ACL from Arista Switch.
@@ -281,13 +281,13 @@ class AristaRPCWrapperBase(object):
         """
         self.security_group_driver.delete_acl(sg)
 
-    def create_acl_rule(self, sgr):
+    def create_acl_rule(self, context, sgr):
         """Creates an ACL on Arista Switch.
 
         For a given Security Group (ACL), it adds additional rule
         Deals with multiple configurations - such as multiple switches
         """
-        self.security_group_driver.create_acl_rule(sgr)
+        self.security_group_driver.create_acl_rule(context, sgr)
 
     def delete_acl_rule(self, sgr):
         """Deletes an ACL rule on Arista Switch.

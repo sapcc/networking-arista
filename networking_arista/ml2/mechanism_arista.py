@@ -1026,7 +1026,8 @@ class AristaDriver(driver_api.MechanismDriver):
             return
 
         try:
-            self.rpc.create_acl(sg)
+            plugin_context = context._plugin_context
+            self.rpc.create_acl(plugin_context, sg)
         except Exception:
             msg = (_('Failed to create ACL on EOS %s') % sg)
             LOG.exception(msg)
@@ -1037,7 +1038,8 @@ class AristaDriver(driver_api.MechanismDriver):
             return
 
         try:
-            self.rpc.create_acl_rule(sgr)
+            plugin_context = context._plugin_context
+            self.rpc.create_acl_rule(plugin_context, sgr)
         except Exception:
             msg = (_('Failed to create ACL rule on EOS %s') % sgr)
             LOG.exception(msg)

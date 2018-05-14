@@ -11,6 +11,7 @@ import json
 from networking_arista.ml2 import arista_sec_gp
 from networking_arista.common.exceptions import AristaSecurityGroupError
 from neutron.tests.unit import testlib_api
+from neutron.context import get_admin_context
 
 
 def setup_config():
@@ -108,7 +109,8 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
               }
 
         self.mock_sg_cmds.reset_mock()
-        self.drv.create_acl(sg)
+        context = get_admin_context()
+        self.drv.create_acl(context, sg)
         self.assertEqual(1, self.mock_sg_cmds.call_count, "expected to be called once")
         self.assertEqual([
             'ip access-list SG-IN-test_security_group',
@@ -128,11 +130,12 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
               'security_group_rules': [self._get_sg_rule('tcp', '192.168.0.1/30')]
               }
         self.mock_sg_cmds.reset_mock()
-        self.drv.create_acl(sg, None, self._get_existing_acls(sg['id']))
+        context = get_admin_context()
+        self.drv.create_acl(context, sg, None, self._get_existing_acls(sg['id']))
         self.mock_sg_cmds.assert_not_called()
 
         sg['security_group_rules'][0] = self._get_sg_rule('udp', '192.168.0.1/30')
-        self.drv.create_acl(sg, None, self._get_existing_acls(sg['id']))
+        self.drv.create_acl(context, sg, None, self._get_existing_acls(sg['id']))
         self.assertEqual(1, self.mock_sg_cmds.call_count, "expected to be called once")
         self.assertIn('no permit tcp 192.168.0.1/30 any range 22 1025 syn',
                       self.mock_sg_cmds.call_args[0][0], 'Excepted delete rule')
@@ -150,7 +153,8 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                                           self._get_sg_rule('udp', '192.168.32.3/28')]
               }
         self.mock_sg_cmds.reset_mock()
-        self.drv.create_acl(sg, None, self._get_existing_acls(sg['id']))
+        context = get_admin_context()
+        self.drv.create_acl(context, sg, None, self._get_existing_acls(sg['id']))
         self.assertEqual(1, self.mock_sg_cmds.call_count, "expected to be called once")
         self.assertTrue(len(self.mock_sg_cmds.call_args[0][0]) < 100, 'Consolidation doesnt work')
 
@@ -163,7 +167,8 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                   [self._get_sg_rule('udp', '192.168.32.3/28')] + [self._get_sg_rule('udp', '0.0.0.0/0')]
               }
         self.mock_sg_cmds.reset_mock()
-        self.drv.create_acl(sg, None, self._get_existing_acls(sg['id']))
+        context = get_admin_context()
+        self.drv.create_acl(context, sg, None, self._get_existing_acls(sg['id']))
         self.assertEqual(1, self.mock_sg_cmds.call_count, "expected to be called once")
         self.assertEqual(9, len(self.mock_sg_cmds.call_args[0][0]), 'Expected only 9 rules')
         self.assertIn('permit udp any any range 22 1025',
@@ -181,23 +186,24 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                     }
 
         self.mock_sg_cmds.reset_mock()
-        self.drv.create_acl(_get_sg(None, None), None, None)
+        context = get_admin_context()
+        self.drv.create_acl(context, _get_sg(None, None), None, None)
         self.assertEqual(1, self.mock_sg_cmds.call_count, "expected to be called once")
         self.assertIn('permit icmp any any', self.mock_sg_cmds.call_args[0][0],
                       'expected generic ICMP rule')
 
-        self.drv.create_acl(_get_sg(1, None), None, None)
+        self.drv.create_acl(context, _get_sg(1, None), None, None)
         self.assertEqual(2, self.mock_sg_cmds.call_count, "expected to be called once")
         self.assertIn('permit icmp any any 1', self.mock_sg_cmds.call_args[0][0],
                       'expected ICMP rule with type')
 
-        self.drv.create_acl(_get_sg(2, 3), None, None)
+        self.drv.create_acl(context, _get_sg(2, 3), None, None)
         self.assertEqual(3, self.mock_sg_cmds.call_count, "expected to be called once")
         self.assertIn('permit icmp any any 2 3', self.mock_sg_cmds.call_args[0][0],
                       'expected ICMP rule with type and rule')
 
         self.assertRaisesRegex(AristaSecurityGroupError, 'Invalid ICMP rule specified',
-                               self.drv.create_acl, _get_sg(None, 666), None, None)
+                               self.drv.create_acl, context, _get_sg(None, 666), None, None)
 
     def test_periodic_sync(self):
         sg = {'id': 'test_security_group',
@@ -290,7 +296,8 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                  'tenant_id': 'test_tenant', 'port_range_min': None, 'ethertype': 'IPv6'}],
               'name': 'default'}
         self.mock_sg_cmds.reset_mock()
-        self.drv.create_acl(sg)
+        context = get_admin_context()
+        self.drv.create_acl(context, sg)
         cmds = self.mock_sg_cmds.call_args_list[0][0][0]
         # + 2 for EXIT and Security Group preamble
         self.assertEqual(len(list(set(cmds))) + 2, len(cmds), 'unexpected duplicate entries')

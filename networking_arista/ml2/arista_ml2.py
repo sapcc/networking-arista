@@ -27,7 +27,9 @@ import requests
 from six import add_metaclass
 
 from neutron.common import constants as n_const
+from neutron import context as neutron_context
 from neutron.db import api as db_api
+from oslo_db.sqlalchemy import enginefacade
 from neutron.extensions import portbindings
 from neutron.plugins.ml2.drivers import type_vlan
 
@@ -102,7 +104,7 @@ class AristaRPCWrapperBase(object):
                 self.mlag_pairs[peers[0]] = physnet
                 self.mlag_pairs[peers[1]] = physnet
 
-        # Indication of CVX availabililty in the driver.
+        # Indication of CVX availability in the driver.
         self._cvx_available = True
 
         # Reference to SyncService object which is set in AristaDriver
@@ -295,14 +297,14 @@ class AristaRPCWrapperBase(object):
         """
         self.security_group_driver.delete_acl_rule(sgr)
 
-    def perform_sync_of_sg(self):
+    def perform_sync_of_sg(self, context):
         """Perform sync of the security groups between ML2 and EOS.
 
         This is unconditional sync to ensure that all security
         ACLs are pushed to all the switches, in case of switch
         or neutron reboot
         """
-        self.security_group_driver.perform_sync_of_sg()
+        self.security_group_driver.perform_sync_of_sg(context)
 
     @abc.abstractmethod
     def bm_and_dvr_supported(self):
@@ -409,10 +411,11 @@ class AristaRPCWrapperBase(object):
         """
 
     @abc.abstractmethod
-    def create_instance_bulk(self, tenant_id, neutron_ports, vms,
+    def create_instance_bulk(self, context, tenant_id, neutron_ports, vms,
                              port_profiles, sync=False):
         """Sends a bulk request to create ports.
 
+        :param context: The database context
         :param tenant_id: globaly unique neutron tenant identifier
         :param neutron_ports: list of ports that need to be created.
         :param vms: list of vms to which the ports will be attached to.
@@ -420,8 +423,8 @@ class AristaRPCWrapperBase(object):
         """
 
     @abc.abstractmethod
-    def delete_instance_bulk(self, tenant_id, instance_id_list, instance_type,
-                             sync=False):
+    def delete_instance_bulk(self, tenant_id, instance_id_list,
+                             instance_type, sync=False):
         """Deletes instances from EOS for a given tenant
 
         :param tenant_id : globally unique neutron tenant identifier
@@ -854,7 +857,7 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
         data = [{'id': tid} for tid in tenant_ids]
         return self._send_api_request(path, 'POST', data)
 
-    def create_instance_bulk(self, tenant_id, neutron_ports, vms,
+    def create_instance_bulk(self, context, tenant_id, neutron_ports, vms,
                              port_profiles, sync=False):
         self._create_tenant_if_needed(tenant_id)
 
@@ -866,7 +869,7 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
         networkSegments = {}
         portBindings = {}
 
-        for vm in vms.values():
+        for vm in six.itervalues(vms):
             for v_port in vm['ports']:
                 port_id = v_port['portId']
                 if not v_port['hosts']:
@@ -910,7 +913,7 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
 
                 if port_id not in networkSegments:
                     networkSegments[port_id] = (
-                        db_lib.get_network_segments_by_port_id(port_id))
+                        db_lib.get_network_segments_by_port_id(context, port_id))
 
                 port = self._create_port_data(port_id, tenant_id,
                                               network_id, inst_id,
@@ -1627,7 +1630,7 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
             cmds.append(self.cli_commands[CMD_SYNC_HEARTBEAT])
         self._run_openstack_cmds(cmds, sync=sync)
 
-    def create_instance_bulk(self, tenant_id, neutron_ports, vms,
+    def create_instance_bulk(self, context, tenant_id, neutron_ports, vms,
                              port_profiles, sync=False):
         cmds = ['tenant %s' % tenant_id]
         # Create a reference to function to avoid name lookups in the loop
@@ -1659,7 +1662,7 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                         device_owner != n_const.DEVICE_OWNER_DVR_INTERFACE):
                     filters = {'port_id': port_id,
                                'host': v_port['hosts'][0]}
-                    segments = db_lib.get_port_binding_level(filters)
+                    segments = db_lib.get_port_binding_level(context, filters)
 
                 if device_owner == n_const.DEVICE_OWNER_DHCP:
                     append_cmd('network id %s' % neutron_port['network_id'])
@@ -1991,6 +1994,7 @@ class SyncService(object):
     are always in sync with Neutron DB.
     """
     def __init__(self, rpc_wrapper, neutron_db):
+        self._context = neutron_context.get_admin_context()
         self._rpc = rpc_wrapper
         self._ndb = neutron_db
         self._force_sync = True
@@ -2000,17 +2004,15 @@ class SyncService(object):
         """Sets the force_sync flag."""
         self._force_sync = True
 
-    def do_synchronize(self, lock=None):
+    def do_synchronize(self):
         """Periodically check whether EOS is in sync with ML2 driver.
 
            If ML2 database is not in sync with EOS, then compute the diff and
            send it down to EOS.
         """
         # Perform sync of Security Groups unconditionally
-        if lock:
-            lock.release()
         try:
-            self._rpc.perform_sync_of_sg()
+            self._rpc.perform_sync_of_sg(self._context)
         except Exception as e:
             LOG.warning(e)
 
@@ -2031,11 +2033,7 @@ class SyncService(object):
             return
 
         # Perform the actual synchronization.
-        if lock:
-            with lock:
-                self.synchronize()
-        else:
-            self.synchronize()
+        self.synchronize(self._context)
 
         # Send 'sync end' marker.
         if not self._rpc.sync_end():
@@ -2045,7 +2043,8 @@ class SyncService(object):
 
         self._set_region_updated_time()
 
-    def synchronize(self):
+    # @enginefacade.reader
+    def synchronize(self, context):
         """Sends data to EOS which differs from neutron DB."""
 
         LOG.info(_LI('Syncing Neutron <-> EOS'))
@@ -2059,7 +2058,7 @@ class SyncService(object):
             self._force_sync = True
             return
 
-        db_tenants = db_lib.get_tenants()
+        db_tenants = db_lib.get_tenants(context)
 
         # Delete tenants that are in EOS, but not in the database
         tenants_to_delete = frozenset(eos_tenants.keys()).difference(
@@ -2080,19 +2079,19 @@ class SyncService(object):
         # Create a dict of networks keyed by id.
         neutron_nets = dict(
             (network['id'], network) for network in
-            self._ndb.get_all_networks()
+            self._ndb.get_all_networks(context)
         )
 
         # Get Baremetal port switch_bindings, if any
-        port_profiles = db_lib.get_all_portbindings()
+        port_profiles = db_lib.get_all_portbindings(context)
         # To support shared networks, split the sync loop in two parts:
         # In first loop, delete unwanted VM and networks and update networks
         # In second loop, update VMs. This is done to ensure that networks for
         # all tenats are updated before VMs are updated
         instances_to_update = {}
         for tenant in db_tenants.keys():
-            db_nets = db_lib.get_networks(tenant)
-            db_instances = db_lib.get_vms(tenant)
+            db_nets = db_lib.get_networks(context, tenant)
+            db_instances = db_lib.get_vms(context, tenant)
 
             eos_nets = self._get_eos_networks(eos_tenants, tenant)
             eos_vms, eos_bms, eos_routers = self._get_eos_vms(eos_tenants,
@@ -2162,7 +2161,7 @@ class SyncService(object):
                         'shared':
                             neutron_nets.get(net_id,
                                              {'shared': False})['shared'],
-                        'segments': self._ndb.get_all_network_segments(net_id),
+                        'segments': self._ndb.get_all_network_segments(context, net_id),
                         }
                         for net_id in nets_to_update
                     ]
@@ -2179,14 +2178,15 @@ class SyncService(object):
                 # Filter the ports to only the vms that we are interested
                 # in.
                 ports_of_interest = {}
-                for port in self._ndb.get_all_ports_for_tenant(tenant):
+                for port in self._ndb.get_all_ports_for_tenant(context, tenant):
                     ports_of_interest.update(
                         self._port_dict_representation(port))
 
                 if ports_of_interest:
-                    db_vms = db_lib.get_vms(tenant)
+                    db_vms = db_lib.get_vms(context, tenant)
                     if db_vms:
-                        self._rpc.create_instance_bulk(tenant,
+                        self._rpc.create_instance_bulk(context,
+                                                       tenant,
                                                        ports_of_interest,
                                                        db_vms,
                                                        port_profiles,
@@ -2439,7 +2439,7 @@ class AristaNoCvxWrapperBase(AristaRPCWrapperBase,
         pass
 
     def create_instance_bulk(self, tenant_id, neutron_ports, vms,
-                             bm_port_profiles, sync=False):
+                             port_profiles, sync=False):
         pass
 
     def delete_instance_bulk(self, tenant_id, instance_id_list, instance_type,

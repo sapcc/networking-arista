@@ -18,6 +18,7 @@ from oslo_config import cfg
 
 from networking_arista._i18n import _
 
+
 # Arista ML2 Mechanism driver specific configuration knobs.
 #
 # Following are user configurable options for Arista ML2 Mechanism
@@ -108,12 +109,13 @@ ARISTA_DRIVER_OPTS = [
     cfg.IntOpt('lossy_consolidation_limit',
                default=0,
                help=_('Sets a limit per Arista Switch for ACL rule count '
-                      'before initiation of a lossy consolidation algorithm '
-                      'that tries to merge ACL Rules into shared subnets in '
-                      'order to minimize total rule count even it it punches '
-                      'holes into the original ruleset. 0 to disable.')),
+                      'before initiation of a lossy consolidation algorithm that '
+                      'tries to merge ACL Rules into shared subnets in order '
+                      'to minimize total rule count even it it punches holes into'
+                      'the original ruleset. 0 to disable.')),
 
 ]
+
 
 """ Arista L3 Service Plugin specific configuration knobs.
 
@@ -169,6 +171,7 @@ ARISTA_L3_PLUGIN = [
                       'synchronization is performed. This is an optional '
                       'field. If not set, a value of 180 seconds is assumed'))
 ]
+
 
 ARISTA_TYPE_DRIVER_OPTS = [
     cfg.IntOpt('sync_interval',

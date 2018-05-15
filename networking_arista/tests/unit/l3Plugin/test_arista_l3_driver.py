@@ -15,8 +15,10 @@
 
 
 import mock
-from neutron.tests import base
+from networking_arista.common import config # noqa
 from oslo_config import cfg
+
+from neutron.tests import base
 
 from networking_arista.l3Plugin import arista_l3_driver as arista
 

@@ -15,12 +15,14 @@
 from logging.config import fileConfig
 
 from alembic import context
-from neutron.db.migration.alembic_migrations import external
-from neutron.db import model_base
 from oslo_config import cfg
 from oslo_db.sqlalchemy import session
 import sqlalchemy as sa
 from sqlalchemy import event
+
+from neutron.db.migration.alembic_migrations import external
+from neutron.db.migration.models import head  # noqa
+from neutron.db import model_base
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

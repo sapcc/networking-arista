@@ -13,9 +13,9 @@
 # under the License.
 
 import gettext
-
 import pbr.version
 import six
+
 
 __version__ = pbr.version.VersionInfo(
     'networking_arista').version_string()

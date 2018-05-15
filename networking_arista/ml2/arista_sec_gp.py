@@ -19,22 +19,19 @@ import os
 import re
 import socket
 import ssl
-
 from collections import defaultdict
 from hashlib import sha1
 from httplib import HTTPException
 
 import jsonrpclib
 import six
-
-from netaddr import EUI
-from netaddr import IPNetwork
-from netaddr import IPSet
+from netaddr import EUI, IPSet, IPNetwork
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils.importutils import try_import
+from oslo_context.context import get_current as get_current_context
 
-from networking_arista._i18n import _
+from networking_arista._i18n import _, _LI
 from networking_arista.common import db_lib
 from networking_arista.common import exceptions as arista_exc
 
@@ -42,14 +39,13 @@ dogstatsd = try_import('datadog.dogstatsd')
 
 if not dogstatsd or os.getenv('STATSD_MOCK', False):
     from mock import Mock
-
     STATS = Mock()
 else:
     STATS = dogstatsd.DogStatsd(host=os.getenv('STATSD_HOST', 'localhost'),
                                 port=int(os.getenv('STATSD_PORT', 9125)),
-                                namespace=os.getenv('STATSD_PREFIX',
-                                                    'openstack')
+                                namespace=os.getenv('STATSD_PREFIX', 'openstack')
                                 )
+
 
 LOG = logging.getLogger(__name__)
 
@@ -62,8 +58,7 @@ SUPPORTED_SG_ETHERTYPES = ['IPv4']
 DIRECTIONS = ['ingress', 'egress']
 INTERFACE_DIRECTIONS = ['configuredEgressIntfs', 'configuredIngressIntfs']
 
-acl_cmd = {
-    # For a rule 0: protocol, 1: cidr, 2: from_port, 3: to_port, 4: flags
+acl_cmd = {  # For a rule 0: protocol, 1: cidr, 2: from_port, 3: to_port, 4: flags
     'acl': {'create': ['ip access-list {0}',
                        'permit tcp any any established'],
             'in_rule': ['permit {0} {1} any range {2} {3} {4}'],
@@ -138,7 +133,7 @@ class AristaSwitchRPCMixin(object):
             eapi_server_url = ('https://%s:%s@%s/command-api' %
                                (switch_user, switch_pass, switch_ip))
             transport = jsonrpclib.jsonrpc.SafeTransport()
-            # TODO(fabianw): Make that a configuration value
+            # TODO: Make that a configuration value
             if hasattr(ssl, '_create_unverified_context'):
                 transport.context = ssl._create_unverified_context()
             server = jsonrpclib.Server(eapi_server_url, transport=transport)
@@ -150,8 +145,7 @@ class AristaSwitchRPCMixin(object):
                 self._server_by_id[system_id] = server
                 self._server_by_ip[switch_ip] = server
             except (socket.error, HTTPException) as e:
-                LOG.warn("Could not connect to server %s due to %s", switch_ip,
-                         e)
+                LOG.warn("Could not connect to server %s due to %s", switch_ip, e)
 
     def _get_server(self, switch_info=None, switch_id=None):
         return self._server_by_ip.get(switch_info) \
@@ -165,7 +159,6 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
     EOS - operating system used on Arista hardware
     Command API - JSON RPC API provided by Arista EOS
     """
-
     def __init__(self, neutron_db):
         super(AristaSecGroupSwitchDriver, self).__init__()
         self._ndb = neutron_db
@@ -269,12 +262,10 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                     out_rule = self.aclCreateDict['in_rule_reverse']
 
             for c in in_rule:
-                in_cmds.append(c.format(protocol, cidr, from_port, to_port,
-                                        flags).strip())
+                in_cmds.append(c.format(protocol, cidr, from_port, to_port, flags).strip())
 
             for c in out_rule:
-                out_cmds.append(c.format(protocol, cidr, from_port, to_port,
-                                         flags).strip())
+                out_cmds.append(c.format(protocol, cidr, from_port, to_port, flags).strip())
 
             return in_cmds, out_cmds
 
@@ -304,7 +295,8 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
         if protocol == 'icmp':
             # ICMP rules require special processing
-            if from_port and to_port or (not from_port and not to_port):
+            if ((from_port and to_port) or
+                    (not from_port and not to_port)):
                 rule = 'icmp_custom2'
             elif from_port and not to_port:
                 rule = 'icmp_custom1'
@@ -341,8 +333,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
         self._run_openstack_sg_cmds(cmds, server)
 
-    def _apply_acl_on_eos(self, port_id, name, direction, server,
-                          accumulator=None):
+    def _apply_acl_on_eos(self, port_id, name, direction, server, accumulator=None):
         """Creates an ACL on Arista HW Device.
 
         :param port_id: The port where the ACL needs to be applied
@@ -393,7 +384,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             return in_cmds, out_cmds
 
         if sgr['ethertype'] is not None \
-            and sgr['ethertype'] not in SUPPORTED_SG_ETHERTYPES:
+                and sgr['ethertype'] not in SUPPORTED_SG_ETHERTYPES:
             return in_cmds, out_cmds
 
         if sgr['protocol'] is None:
@@ -410,8 +401,8 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         elif remote_group_id:
             security_group_ips = security_group_ips or {}
             if remote_group_id not in security_group_ips:
-                fetched = self._ndb._select_ips_for_remote_group(
-                    context, [remote_group_id])
+                fetched = self._ndb._select_ips_for_remote_group(context,
+                                                                 [remote_group_id])
                 security_group_ips.update(fetched)
 
             remote_ips = security_group_ips[remote_group_id]
@@ -460,9 +451,8 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             try:
                 self._run_openstack_sg_cmds(cmds, s)
             except Exception as e:
-                msg = (_('Failed to create ACL rule on EOS %(server)s '
-                       ' due to %(exc)s') %
-                       {'server': server_id, 'exc': e})
+                msg = (_('Failed to create ACL rule on EOS %s due to %s') %
+                       (server_id, e))
                 LOG.debug(msg)
 
     def delete_acl_rule(self, sgr):
@@ -508,9 +498,8 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                                                    sgr['direction'],
                                                    s)
                 except Exception as e:
-                    msg = (_('Failed to delete ACL on EOS '
-                             ' %(server)s (%(exc)s)') %
-                           {'server': server_id, 'exc': e})
+                    msg = (_('Failed to delete ACL on EOS %s (%s)') %
+                            (server_id, e))
                     LOG.debug(msg)
 
     def _create_acl_shell(self, sg_id):
@@ -551,8 +540,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                         return network
 
                     if lossy:
-                        ipset = IPSet([enlarge(network) for network in
-                                       ipset.iter_cidrs()])
+                        ipset = IPSet([enlarge(network) for network in ipset.iter_cidrs()])
 
                     for net in ipset.iter_cidrs():
                         if net == IPNetwork('0.0.0.0/0'):
@@ -571,23 +559,16 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
     def _consolidate_cmds(self, cmds, num_rules):
         lossy = 0 < self.max_rules < num_rules
         r = {
-            # This compacts typical setups by using other security groups as
-            # rule
+            # This compacts typical setups by using other security groups as rule
             # e.g. Match 'permit tcp host 10.180.1.2 any range 10000 10000 syn'
-            'ingress': re.compile(
-                r"^permit (udp|tcp) (?:host )?"
-                r"(\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:/\d{1,3})?|any) any"
-                r"range (\w+) (\w+)(?: syn)?"),
-            'egress': re.compile(
-                r"^permit (udp|tcp) any range (\w+) (\w+) (?:host )?"
-                r"(\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:/\d{1,3})?|any)"
-                r"(?: syn)?")
+            'ingress': re.compile(r"^permit (udp|tcp) (?:host )?(\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:/\d{1,3})?|any) any range (\w+) (\w+)(?: syn)?"),
+            #'egress': re.compile(r"^permit (udp|tcp) any (?:host )?(\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:/\d{1,3})?|any) range (\w+) (\w+)(?: syn)?")
+            'egress': re.compile(r"^permit (udp|tcp) any range (\w+) (\w+) (?:host )?(\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:/\d{1,3})?|any)(?: syn)?")
         }
 
         processed_cmds = {'ingress': [], 'egress': []}
         for dir in DIRECTIONS:
-            consolidation_dict = defaultdict(
-                lambda: defaultdict(lambda: defaultdict(list)))
+            consolidation_dict = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
             for cmd in cmds[dir]:
                 match = r[dir].match(cmd)
                 if match is not None:
@@ -602,11 +583,9 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
             for network in self._consolidate_ips(consolidation_dict, lossy):
                 if dir == 'ingress':
-                    processed_cmds[dir].append(
-                        ("permit %s %s any range %s %s %s" % network).strip())
+                    processed_cmds[dir].append(("permit %s %s any range %s %s %s" % network).strip())
                 else:
-                    processed_cmds[dir].append(
-                        ("permit %s any %s range %s %s %s" % network).strip())
+                    processed_cmds[dir].append(("permit %s any %s range %s %s %s" % network).strip())
 
         if lossy:
             LOG.debug("Consolidated ACLs lossy from %d/%d to %d/%d!" %
@@ -633,9 +612,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         diff = []
         for new_acl in new_acls:
             # find all acls in existing set
-            acls = list(filter(
-                lambda x: x['text'] == new_acl or self._conv_acl(x) == new_acl,
-                existing_acls))
+            acls = list(filter(lambda x: x['text'] == new_acl or self._conv_acl(x) == new_acl, existing_acls))
 
             # new rule? add to doff
             if len(acls) == 0:
@@ -645,8 +622,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             for acl in acls:
                 acl['synced'] = True
 
-        diff += ['no ' + acl['text'] for acl in existing_acls if
-                 'synced' not in acl]
+        diff += ['no ' + acl['text'] for acl in existing_acls if not 'synced' in acl]
         return diff
 
     def _conv_acl(self, acl):
@@ -656,33 +632,27 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             return acl['text']
 
         ips = {'src': '', 'dst': ''}
-        for dir, selector in zip(['src', 'dst'], ['source', 'destination']):
-
-            if acl['ruleFilter'][selector]['mask'] == 0:
+        for dir in ['src', 'dst']:
+            if acl['ruleFilter']['source' if dir == 'src' else 'destination']['mask'] == 0:
                 ip = 'any'
-            elif acl['ruleFilter'][selector]['mask'] == 1 << 32:
-                ip = 'host ' + acl['ruleFilter'][selector]['ip']
+            elif acl['ruleFilter']['source' if dir == 'src' else 'destination']['mask'] == 1 << 32:
+                ip = 'host ' + acl['ruleFilter']['source' if dir == 'src' else 'destination']['ip']
             else:
                 cidr_mask = int(round(math.log(4L, 2)))
-                ip = acl['ruleFilter'][selector]['ip'] + '/' + str(cidr_mask)
+                ip = acl['ruleFilter']['source' if dir == 'src' else 'destination']['ip'] + '/' + str(cidr_mask)
 
             if acl['ruleFilter'][dir + 'Port']['oper'] == 'any':
                 ips[dir] = ip
             elif acl['ruleFilter'][dir + 'Port']['oper'] == 'eq':
                 ips[dir] = "{} eq {}".format(ip,
-                                             ','.join([str(port) for port in
-                                                       acl['ruleFilter'][
-                                                           dir + 'Port'][
-                                                           'ports']]))
+                                             ','.join([str(port) for port in acl['ruleFilter'][dir + 'Port']['ports']]))
             elif acl['ruleFilter'][dir + 'Port']['oper'] == 'range':
                 ips[dir] = "{} range {}".format(ip, ' '.join(
-                    [str(port) for port in
-                     acl['ruleFilter'][dir + 'Port']['ports']]))
+                    [str(port) for port in acl['ruleFilter'][dir + 'Port']['ports']]))
 
         prop = {
             'action': acl['action'],
-            'protocol': self._protocol_table[
-                acl['ruleFilter']['protocol']].lower(),
+            'protocol': self._protocol_table[acl['ruleFilter']['protocol']].lower(),
             'src': ips['src'],
             'dst': ips['dst'],
             'flags': 'syn' if acl['ruleFilter']['tcpFlags'] else ''
@@ -714,45 +684,34 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                 security_group_ips=security_group_ips
             )
 
-        num_rules = {'ingress': len(cmds['ingress']) - 2,
-                     'egress': len(cmds['egress']) - 2}
+        num_rules = {'ingress': len(cmds['ingress']) - 2, 'egress': len(cmds['egress']) - 2}
 
         # let's consolidate
-        cmds = self._consolidate_cmds(cmds, num_rules['ingress'] + num_rules[
-            'egress'])
+        cmds = self._consolidate_cmds(cmds, num_rules['ingress'] + num_rules['egress'])
 
         # Create per server diff and apply
         for server_id, s in six.iteritems(self._server_by_id):
             server_diff = cmds.copy()
             for d, dir in enumerate(DIRECTIONS):
-                tags = ['server.id:' + str(server_id),
-                        'security.group:' + sg['id'],
+                tags = ['server.id:' + str(server_id), 'security.group:' + sg['id'],
                         'project.id:' + sg['tenant_id'], 'direction:' + dir
                         ]
-                self._statsd.gauge('networking.arista.security.groups',
-                                   num_rules[dir], tags=tags)
+                self._statsd.gauge('networking.arista.security.groups', num_rules[dir], tags=tags)
 
                 acl_name = self._arista_acl_name(security_group_id, dir)
                 if existing_acls is not None:
                     server_diff[dir] = self._create_acl_diff([
-                        acl for acl in
-                        existing_acls[server_id].get(acl_name, [])
+                        acl for acl in existing_acls[server_id].get(acl_name, [])
                         if acl['text'] not in self.aclCreateDict['create']
                     ], cmds[dir])
 
                 if len(server_diff[dir]) > 0:
-                    server_diff[dir] = \
-                        self._create_acl_shell(security_group_id)[d] + \
-                        server_diff[dir] + ['exit']
+                    server_diff[dir] = self._create_acl_shell(security_group_id)[d] + server_diff[dir] + ['exit']
             try:
-                if len(server_diff['ingress']) + \
-                        len(server_diff['egress']) > 0:
-                    self._run_openstack_sg_cmds(
-                        server_diff['ingress'] + server_diff['egress'], s)
+                if len(server_diff['ingress']) + len(server_diff['egress']) > 0:
+                    self._run_openstack_sg_cmds(server_diff['ingress'] + server_diff['egress'], s)
             except Exception as error:
-                msg = (_('Failed to create ACL on EOS %(server)s '
-                       ' due to %(msg)s') %
-                       {'server': server_id, 'msg': error.message})
+                msg = (_('Failed to create ACL on EOS %s: %s') % (server_id, error.message))
                 LOG.exception(msg)
                 # raise arista_exc.AristaSecurityGroupError(msg=msg)
 
@@ -773,12 +732,10 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             name = self._arista_acl_name(sg['id'], d)
 
             for server_id, s in six.iteritems(self._server_by_id):
-                tags = ['server.id:' + str(server_id),
-                        'security.group:' + sg['id'],
+                tags = ['server.id:' + str(server_id), 'security.group:' + sg['id'],
                         'project.id:' + sg['tenant_id'], 'direction:' + d
                         ]
-                self._statsd.gauge('networking.arista.security.groups', 0,
-                                   tags=tags)
+                self._statsd.gauge('networking.arista.security.groups', 0, tags=tags)
                 try:
                     self._delete_acl_from_eos(name, s)
                 except Exception as error:
@@ -786,8 +743,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                     LOG.exception(msg)
                     raise arista_exc.AristaSecurityGroupError(msg=msg)
 
-    def apply_acl(self, sgs, switch_id=None, port_id=None, switch_info=None,
-                  server=None):
+    def apply_acl(self, sgs, switch_id=None, port_id=None, switch_info=None, server=None):
         """Creates an ACL on Arista Switch.
 
         Applies ACLs to the baremetal ports only. The port/switch
@@ -820,8 +776,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             LOG.exception(msg)
             raise arista_exc.AristaSecurityGroupError(msg=msg)
 
-    def remove_acl(self, sgs, switch_id=None, port_id=None, switch_info=None,
-                   server=None):
+    def remove_acl(self, sgs, switch_id=None, port_id=None, switch_info=None, server=None):
         """Removes an ACL from Arista Switch.
 
         Removes ACLs from the baremetal ports only. The port/switch
@@ -846,10 +801,9 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             try:
                 self._remove_acl_from_eos(port_id, name, dir, server)
             except Exception as e:
-                msg = _('Failed to remove ACL on port %(port)s '
-                        'due to %(msg)s') % {
-                    'port': port_id,
-                    'msg': e.message}
+                msg = _('Failed to remove ACL on port %s due to %s') % (
+                    port_id,
+                    e.message)
                 LOG.exception(msg)
                 # No need to raise exception for ACL removal
                 # raise arista_exc.AristaSecurityGroupError(msg=msg)
@@ -925,11 +879,10 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
         arista_ports = db_lib.get_ports(context)
         arista_port_ids = set(arista_ports.iterkeys())
-        sg_bindings = self._ndb.get_all_security_gp_to_port_bindings(
-            context, filters={'port_id': arista_port_ids})
-        neutron_sgs = self._ndb.get_security_groups(
-            context, filters={'id': set(binding['security_group_id']
-                                        for binding in sg_bindings)})
+        sg_bindings = self._ndb.get_all_security_gp_to_port_bindings(context, filters={'port_id': arista_port_ids})
+        neutron_sgs = self._ndb.get_security_groups(context,
+            filters={'id': set(binding['security_group_id'] for binding in sg_bindings)}
+        )
 
         all_sgs = set()
         sgs_dict = collections.defaultdict(list)
@@ -1043,7 +996,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                             'no ip access-group default out',
                             'exit'
                         ], server)
-                    except arista_exc.AristaServicePluginRpcError:
+                    except arista_exc.AristaServicePluginRpcError as e:
                         pass
 
         for server_id, acls_on_switch in six.iteritems(existing_acls):

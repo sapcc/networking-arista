@@ -19,8 +19,9 @@ from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2 import db as segments_db
 from neutron.plugins.ml2 import driver_api
 from neutron.plugins.ml2 import models as ml2_models
-from networking_arista.common import db as db_models
 from sqlalchemy import literal
+
+from networking_arista.common import db as db_models
 
 VLAN_SEGMENTATION = 'vlan'
 
@@ -67,7 +68,6 @@ def num_provisioned_tenants(context):
 
     :param context: context of the transaction
     """
-    session = context.session
     return get_all_tenants(context).count()
 
 
@@ -220,7 +220,7 @@ def is_port_provisioned(context, port_id, host_id=None):
 
     return session.query(literal(True)).filter(
         session.query(db_models.AristaProvisionedVms).
-            filter_by(**filters).exists()).scalar()
+        filter_by(**filters).exists()).scalar()
 
 
 def is_network_provisioned(context,
@@ -256,7 +256,7 @@ def is_tenant_provisioned(context, tenant_id):
     query = context.session.query
 
     return query(literal(True)).filter(
-        query(db_models.AristaProvisionedTenants). \
+        query(db_models.AristaProvisionedTenants).
         filter_by(tenant_id=tenant_id).exists()).scalar()
 
 
@@ -420,9 +420,9 @@ def get_all_portbindings(context):
 
 def get_port_binding_level(context, filters):
     """Returns entries from PortBindingLevel based on the specified filters."""
-    return context.session.query(ml2_models.PortBindingLevel).\
-        filter_by(**filters).\
-        order_by(ml2_models.PortBindingLevel.level).\
+    return context.session.query(ml2_models.PortBindingLevel). \
+        filter_by(**filters). \
+        order_by(ml2_models.PortBindingLevel.level). \
         all()
 
 
@@ -457,7 +457,8 @@ class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,
                      self).get_networks(context, filters=filters) or []
 
     def get_all_networks(self, context, fields=None):
-        return super(NeutronNets, self).get_networks(context, fields=fields) or []
+        return super(NeutronNets, self).get_networks(context,
+                                                     fields=fields) or []
 
     def get_all_ports(self, context, filters=None):
         return super(NeutronNets, self).get_ports(context,
@@ -490,7 +491,8 @@ class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,
 
     def get_all_network_segments(self, context, network_id):
         segments = self.get_network_segments(context, network_id)
-        segments += self.get_network_segments(context, network_id, dynamic=True)
+        segments += self.get_network_segments(context, network_id,
+                                              dynamic=True)
         return segments
 
     def get_segment_by_id(self, session, segment_id):
@@ -507,7 +509,7 @@ class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,
         return self.get_subnet(context, subnet_id)
 
     def get_subnet(self, context, subnet_id):
-        return super(NeutronNets, self).\
+        return super(NeutronNets, self). \
                    get_subnet(context, subnet_id) or {}
 
     def get_all_security_gp_to_port_bindings(self, context, filters=None):

@@ -49,7 +49,7 @@ router_in_vrf = {
                   'remove': ['no interface vlan {0}']}}
 
 router_in_default_vrf = {
-    'router': {'create': [],   # Place holder for now.
+    'router': {'create': [],  # Place holder for now.
                'delete': []},  # Place holder for now.
 
     'interface': {'add': ['ip routing',
@@ -93,6 +93,7 @@ class AristaL3Driver(object):
     EOS - operating system used on Arista hardware
     Command API - JSON RPC API provided by Arista EOS
     """
+
     def __init__(self):
         self._servers = []
         self._hosts = []

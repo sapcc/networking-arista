@@ -15,5 +15,4 @@
 
 from oslo_config import cfg
 
-
 cfg.CONF.use_stderr = False

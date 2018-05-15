@@ -15,10 +15,8 @@
 
 import sqlalchemy as sa
 
-
 from neutron.db import model_base
 from neutron.db import models_v2
-
 
 UUID_LEN = 36
 STR_LEN = 255

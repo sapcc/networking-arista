@@ -14,24 +14,22 @@
 # limitations under the License.
 
 import abc
-import six
 import base64
 import json
 import os
-import socket
-
-from oslo_config import cfg
-from oslo_log import log as logging
-from oslo_utils import excutils
 import requests
-from six import add_metaclass
+import six
+import socket
 
 from neutron.common import constants as n_const
 from neutron import context as neutron_context
 from neutron.db import api as db_api
-from oslo_db.sqlalchemy import enginefacade
 from neutron.extensions import portbindings
 from neutron.plugins.ml2.drivers import type_vlan
+from oslo_config import cfg
+from oslo_log import log as logging
+from oslo_utils import excutils
+from six import add_metaclass
 
 from networking_arista._i18n import _, _LI, _LW, _LE
 from networking_arista.common import db_lib
@@ -78,6 +76,7 @@ class AristaRPCWrapperBase(object):
     EOS - operating system used on Arista hardware
     Command API - JSON RPC API provided by Arista EOS
     """
+
     def __init__(self, neutron_db):
         super(AristaRPCWrapperBase, self).__init__()
         self._ndb = neutron_db
@@ -913,7 +912,8 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
 
                 if port_id not in networkSegments:
                     networkSegments[port_id] = (
-                        db_lib.get_network_segments_by_port_id(context, port_id))
+                        db_lib.get_network_segments_by_port_id(context,
+                                                               port_id))
 
                 port = self._create_port_data(port_id, tenant_id,
                                               network_id, inst_id,
@@ -927,7 +927,7 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
                         networkSegments[port_id])
                 elif instance_type in InstanceType.BAREMETAL_INSTANCE_TYPES:
                     switch_profile = json.loads(port_profiles[
-                                                port_id]['profile'])
+                                                    port_id]['profile'])
                     portBinding = self._get_switch_bindings(
                         port_id, inst_host, network_id,
                         switch_profile.get('local_link_information', []),
@@ -963,8 +963,8 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
     def delete_instance_bulk(self, tenant_id, instance_id_list, instance_type,
                              sync=False):
         path = 'region/%(region)s/%(type)s' % {
-               'region': self.region,
-               'type': instance_type}
+            'region': self.region,
+            'type': instance_type}
 
         data = [{'id': i} for i in instance_id_list]
         return self._send_api_request(path, 'DELETE', data)
@@ -1011,9 +1011,9 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
         port = self._create_port_data(port_id, tenant_id, net_id, device_id,
                                       port_name, device_type, [host_id])
         url = 'region/%(region)s/%(device_type)s?tenantId=%(tenant_id)s' % {
-              'region': self.region,
-              'device_type': device_type,
-              'tenant_id': tenant_id,
+            'region': self.region,
+            'device_type': device_type,
+            'tenant_id': tenant_id,
         }
         self._send_api_request(url, 'POST', [instance])
         self._send_api_request('region/' + self.region + '/port', 'POST',
@@ -1071,17 +1071,17 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
                  'segmentationId': s['segmentation_id'],
                  'networkId': network_id,
                  'segment_type': 'dynamic' if s.get('is_dynamic', False) else
-                                 'static',
+                 'static',
                  } for s in segments]
 
     def _get_host_bindings(self, port_id, host, network_id, segments):
         return [{'portId': port_id,
-                'hostBinding': [{
-                    'host': host,
-                    'segment': self._get_segment_list(network_id,
-                                                      segments),
-                }]
-            }]
+                 'hostBinding': [{
+                     'host': host,
+                     'segment': self._get_segment_list(network_id,
+                                                       segments),
+                 }]
+                 }]
 
     def bind_port_to_host(self, port_id, host, network_id, segments):
 
@@ -1314,7 +1314,7 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
     def _baremetal_support_check(self, vnic_type):
         # Basic error checking for baremental deployments
         if (vnic_type == portbindings.VNIC_BAREMETAL and
-           not self.bm_and_dvr_supported()):
+                not self.bm_and_dvr_supported()):
             msg = _("Baremetal instances are not supported in this"
                     " release of EOS")
             LOG.error(msg)
@@ -1344,8 +1344,8 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                                                  port_name,
                                                  sg, orig_sg,
                                                  vnic_type,
-                                             switch_bindings,
-                                             vlan_type)
+                                                 switch_bindings,
+                                                 vlan_type)
             else:
                 self.plug_host_into_network(device_id,
                                             host_id,
@@ -1444,7 +1444,7 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                                     (port_id, network_id, vlan_type,
                                      binding['switch_id'], binding['port_id']))
                     cmds.extend('segment level %d id %s' % (level,
-                                segment['id'])
+                                                            segment['id'])
                                 for level, segment in enumerate(segments))
                 else:
                     msg = _('switch and port ID not specified for baremetal')
@@ -1557,7 +1557,7 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                     seg['id'] if self.hpb_supported() else 1,
                     seg['network_type'], seg['segmentation_id'],
                     ('dynamic' if seg.get('is_dynamic', False) else 'static'
-                     if self.hpb_supported() else ''))
+                    if self.hpb_supported() else ''))
                 for seg in network['segments']
                 if seg['network_type'] != NETWORK_TYPE_FLAT
             )
@@ -1580,7 +1580,7 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                 'segment %s type %s id %d %s' % (
                     seg['id'], seg['network_type'], seg['segmentation_id'],
                     ('dynamic' if seg.get('is_dynamic', False) else 'static'
-                     if self.hpb_supported() else ''))
+                    if self.hpb_supported() else ''))
                 for seg in segments)
             self._run_openstack_cmds(cmds)
 
@@ -1671,7 +1671,7 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                                 neutron_port['id'], port_name))
                     cmds.extend('segment level %d id %s' % (
                         segment.level, segment.segment_id)
-                        for segment in segments)
+                                for segment in segments)
                 elif (device_owner.startswith('compute') or
                       device_owner.startswith('baremetal')):
                     if vnic_type == 'baremetal':
@@ -1680,7 +1680,8 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                         profile = port_profiles[neutron_port['id']]
                         profile = json.loads(profile['profile'])
                         vlan_type = profile.get('vlan_type', 'native')
-                        for binding in profile.get('local_link_information', []):
+                        for binding in profile.get('local_link_information',
+                                                   []):
                             if not binding or not isinstance(profile, dict):
                                 # skip all empty entries
                                 continue
@@ -1702,31 +1703,29 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                                              binding['port_id']))
                             cmds.extend('segment level %d id %s' % (
                                 segment.level, segment.segment_id)
-                                for segment in segments)
-
-
+                                        for segment in segments)
                     else:
                         append_cmd('vm id %s hostid %s' % (vm['vmId'],
                                                            v_port['hosts'][0]))
                         append_cmd('port id %s %s network-id %s' %
                                    (neutron_port['id'], port_name,
                                     neutron_port['network_id']))
-                        cmds.extend('segment level %d id %s' % (segment.level,
-                                                                segment.segment_id)
-                                    for segment in segments)
+                        cmds.extend('segment level %d id %s' % (
+                            segment.level, segment.segment_id)
+                            for segment in segments)
                 elif device_owner == n_const.DEVICE_OWNER_DVR_INTERFACE:
                     if not self.bm_and_dvr_supported():
                         LOG.info(ERR_DVR_NOT_SUPPORTED)
                         continue
                     append_cmd('instance id %s type router' % (
-                               neutron_port['device_id']))
+                        neutron_port['device_id']))
                     for host in v_port['hosts']:
                         append_cmd('port id %s network-id %s hostid %s' % (
-                                   neutron_port['id'],
-                                   neutron_port['network_id'], host))
-                        cmds.extend('segment level %d id %s' % (segment.level,
-                                    segment.segment_id)
-                                    for segment in segments)
+                            neutron_port['id'],
+                            neutron_port['network_id'], host))
+                        cmds.extend('segment level %d id %s' % (
+                            segment.level, segment.segment_id)
+                            for segment in segments)
                 else:
                     LOG.warning(_LW("Unknown device owner: %s"),
                                 neutron_port['device_owner'])
@@ -1982,7 +1981,7 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
             return res
         except Exception as exc:
             LOG.error(_LE('command %(cmds)s failed with '
-                      '%(exc)s'), {'cmds': cmds, 'exc': exc})
+                          '%(exc)s'), {'cmds': cmds, 'exc': exc})
             return {}
 
 
@@ -1993,6 +1992,7 @@ class SyncService(object):
     ensures that Networks and VMs configured on EOS/Arista HW
     are always in sync with Neutron DB.
     """
+
     def __init__(self, rpc_wrapper, neutron_db):
         self._context = neutron_context.get_admin_context()
         self._rpc = rpc_wrapper
@@ -2161,8 +2161,9 @@ class SyncService(object):
                         'shared':
                             neutron_nets.get(net_id,
                                              {'shared': False})['shared'],
-                        'segments': self._ndb.get_all_network_segments(context, net_id),
-                        }
+                        'segments': self._ndb.get_all_network_segments(context,
+                                                                       net_id),
+                    }
                         for net_id in nets_to_update
                     ]
                     self._rpc.create_network_bulk(tenant, networks, sync=True)
@@ -2178,7 +2179,8 @@ class SyncService(object):
                 # Filter the ports to only the vms that we are interested
                 # in.
                 ports_of_interest = {}
-                for port in self._ndb.get_all_ports_for_tenant(context, tenant):
+                for port in self._ndb.get_all_ports_for_tenant(context,
+                                                               tenant):
                     ports_of_interest.update(
                         self._port_dict_representation(port))
 
@@ -2203,7 +2205,7 @@ class SyncService(object):
         """
         eos_region_updated_times = self._rpc.get_region_updated_time()
         return eos_region_updated_times and self._region_updated_time and \
-               self._region_updated_time == eos_region_updated_times
+            self._region_updated_time == eos_region_updated_times
 
     def _sync_required(self):
         """"Check whether the sync is required."""
@@ -2260,10 +2262,11 @@ class AristaNoCvxWrapperBase(AristaRPCWrapperBase,
                              arista_sec_gp.AristaSwitchRPCMixin):
     """Wraps Arista Direct Communication.
     """
+
     def __init__(self, neutron_db=None):
         super(AristaNoCvxWrapperBase, self).__init__(neutron_db)
-        arista_sec_gp.AristaSwitchRPCMixin._validate_config(self,
-            _('when "api_type" is "nocvx"')
+        arista_sec_gp.AristaSwitchRPCMixin._validate_config(
+            self, _('when "api_type" is "nocvx"')
         )
 
     # This is the only EAPI call, which we hopefully never need
@@ -2299,7 +2302,6 @@ class AristaNoCvxWrapperBase(AristaRPCWrapperBase,
 
             port_id = binding['port_id']
             vlan_id = segments[-1]['segmentation_id']
-            segment_id = segments[-1]['id']
 
             result = server.runCmds(
                 version=1,

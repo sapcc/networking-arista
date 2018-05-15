@@ -821,14 +821,13 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         command_end = ['exit']
         full_command = command_start + commands + command_end
 
-        LOG.debug(_LI('Executing command on Arista EOS: %s'), full_command)
+        LOG.debug('Executing command on Arista EOS: %s', full_command)
 
         try:
             # this returns array of return values for every command in
             # full_command list
             ret = server.runCmds(version=1, cmds=full_command)
-            LOG.debug(_LI('Results of execution on Arista EOS: %s'), ret)
-
+            LOG.debug('Results of execution on Arista EOS: %s', ret)
         except Exception as e:
             msg = (_('Error occurred while trying to execute '
                      'commands %(cmd)s: %(error)') %

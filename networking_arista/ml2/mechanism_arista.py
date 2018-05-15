@@ -1026,8 +1026,7 @@ class AristaDriver(driver_api.MechanismDriver):
             return
 
         try:
-            plugin_context = context._plugin_context
-            self.rpc.create_acl(plugin_context, sg)
+            self.rpc.create_acl(context, sg)
         except Exception:
             msg = (_('Failed to create ACL on EOS %s') % sg)
             LOG.exception(msg)
@@ -1038,8 +1037,7 @@ class AristaDriver(driver_api.MechanismDriver):
             return
 
         try:
-            plugin_context = context._plugin_context
-            self.rpc.create_acl_rule(plugin_context, sgr)
+            self.rpc.create_acl_rule(context, sgr)
         except Exception:
             msg = (_('Failed to create ACL rule on EOS %s') % sgr)
             LOG.exception(msg)
@@ -1048,8 +1046,7 @@ class AristaDriver(driver_api.MechanismDriver):
     def delete_security_group_rule(self, context, sgr_id):
         if not sgr_id:
             return
-        plugin_context = context._plugin_context
-        sgr = self.ndb.get_security_group_rule(plugin_context, sgr_id)
+        sgr = self.ndb.get_security_group_rule(context, sgr_id)
         if not sgr:
             return
 
@@ -1065,11 +1062,10 @@ class AristaDriver(driver_api.MechanismDriver):
 
     @staticmethod
     def _is_security_group_used(context, security_group_id):
-        plugin_context = context._plugin_context
         sg_id = sg_db.SecurityGroupPortBinding.security_group_id
         port_id = sg_db.SecurityGroupPortBinding.port_id
 
-        result = plugin_context.session.query(sg_id).filter(
+        result = context.session.query(sg_id).filter(
             sg_id == security_group_id).join(
             db.AristaProvisionedVms, db.AristaProvisionedVms.port_id == port_id
         ).first()

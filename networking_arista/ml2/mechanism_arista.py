@@ -13,19 +13,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from oslo_config import cfg
-from oslo_service import loopingcall
-from oslo_log import log as logging
-from oslo_db.sqlalchemy import enginefacade
-
+import neutron.context as neutron_context
 from neutron.common import constants as n_const, config as common_config
 from neutron.db import securitygroups_db as sg_db, models_v2
 from neutron.extensions import portbindings
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2 import driver_api
 from neutron.plugins.ml2.common import exceptions as ml2_exc
-
-import neutron.context as neutron_context
+from oslo_config import cfg
+from oslo_log import log as logging
+from oslo_service import loopingcall
 
 from networking_arista._i18n import _, _LI, _LE
 from networking_arista.common import config  # noqa
@@ -1077,22 +1074,30 @@ def cli():
     import json
     from oslo_config import cfg
     from neutron.context import get_admin_context
-    from neutron.plugins.ml2.models import PortBinding, PortBindingLevel, NetworkSegment
+    from neutron.plugins.ml2.models import PortBindingLevel,\
+        NetworkSegment
     from neutron.db.models_v2 import Port
-    from sqlalchemy.orm import joinedload, subqueryload, relationship, backref
+    from sqlalchemy.orm import contains_eager, joinedload, relationship
 
     config.CONF.register_cli_opts([
         cfg.MultiStrOpt('port_id',
                         short='p',
                         default=[],
                         help=''),
+        cfg.BoolOpt('all_ports',
+                    default=False,
+                    help='Should we sync all ports'),
+
     ])
     common_config.init(sys.argv[1:])
 
+    if not config.CONF.all_ports and not config.CONF.port_id:
+        LOG.error("Nothing to do, specify either port_id or all_ports")
+        return
+
     context = get_admin_context()
-    ndb = db_lib.NeutronNets(context=context)
+    ndb = db_lib.NeutronNets()
     confg = config.CONF.ml2_arista
-    managed_physnets = confg['managed_physnets']
 
     api_type = confg['api_type'].upper()
     if api_type == 'EAPI':
@@ -1108,18 +1113,24 @@ def cli():
         LOG.error(msg)
         raise arista_exc.AristaRpcError(msg=msg)
 
-    PortBindingLevel.port = relationship(Port,
-        backref=backref("port_binding_levels"))
-
-    PortBindingLevel.segment = relationship(NetworkSegment)
+    Port.port_binding_levels = relationship(PortBindingLevel)
+    PortBindingLevel.segment = relationship(NetworkSegment,
+                                            lazy='subquery')
 
     with context.session.begin():
         session = context.session
-        for port in session.query(Port). \
-                options(joinedload(Port.port_binding)).\
-                options(joinedload(Port.security_groups)).\
-                options(subqueryload(Port.port_binding_levels).subqueryload(PortBindingLevel.segment)).\
-                filter(models_v2.Port.id.in_(config.CONF.port_id)):
+        ports = session.query(Port). \
+            join(Port.port_binding). \
+            join(Port.port_binding_levels). \
+            options(joinedload(Port.security_groups)). \
+            filter(PortBindingLevel.driver == MECHANISM_DRV_NAME). \
+            options(contains_eager(Port.port_binding_levels))
+
+        if config.CONF.port_id:
+            ports.filter(Port.id.in_(config.CONF.port_id))
+
+        for port in ports:
+            print(port.id)
             port_id = port.id
             device_id = port.device_id
             network_id = port.network_id
@@ -1130,28 +1141,28 @@ def cli():
             vnic_type = binding.vnic_type
             orig_sg = None
             tenant_id = port.tenant_id
-            sg = [ sg.security_group_id for sg in port.security_groups ]
+            sg = [sg.security_group_id for sg in port.security_groups]
             binding_profile = json.loads(binding.profile)
             bindings = binding_profile.get('local_link_information', [])
             vlan_type = binding_profile.get('vlan_type', 'native')
-            segments = [ {'id': level.segment_id, 'level': level.level,
-                          'physical_network': level.segment.physical_network,
-                          'segmentation_id': level.segment.segmentation_id,
-                          'network_type': level.segment.network_type,
-                          'is_dynamic':  level.segment.is_dynamic,
-                          }
-                         for level in port.port_binding_levels
-                         if level.driver == 'arista'
-                         ]
+            segments = [{'id': level.segment_id, 'level': level.level,
+                         'physical_network': level.segment.physical_network,
+                         'segmentation_id': level.segment.segmentation_id,
+                         'network_type': level.segment.network_type,
+                         'is_dynamic': level.segment.is_dynamic,
+                         }
+                        for level in port.port_binding_levels
+                        if level.driver == 'arista'
+                        ]
             rpc.plug_port_into_network(device_id,
-                                   hostname,
-                                   port_id,
-                                   network_id,
-                                   tenant_id,
-                                   port_name,
-                                   device_owner,
-                                   sg, orig_sg,
-                                   vnic_type,
-                                   segments=segments,
-                                   switch_bindings=bindings,
-                                   vlan_type=vlan_type)
+                                       hostname,
+                                       port_id,
+                                       network_id,
+                                       tenant_id,
+                                       port_name,
+                                       device_owner,
+                                       sg, orig_sg,
+                                       vnic_type,
+                                       segments=segments,
+                                       switch_bindings=bindings,
+                                       vlan_type=vlan_type)

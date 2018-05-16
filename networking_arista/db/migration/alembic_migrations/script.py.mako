@@ -33,4 +33,4 @@ ${imports if imports else ""}
 
 
 def upgrade():
-    ${upgrades if upgrades else "pass"}
+${upgrades if upgrades else "pass"}

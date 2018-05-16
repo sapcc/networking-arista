@@ -14,19 +14,20 @@
 # limitations under the License.
 
 import itertools
+import json
 import socket
 
 import mock
-from mock import patch
-from oslo_config import cfg
-
-from neutron.common import constants as n_const
 import neutron.db.api as db
+
+from mock import patch
+from neutron.common import constants as n_const
 from neutron.context import get_admin_context
 from neutron.extensions import portbindings
 from neutron.plugins.ml2 import driver_api as api
 from neutron.tests import base
 from neutron.tests.unit import testlib_api
+from oslo_config import cfg
 
 from networking_arista.common import db_lib
 from networking_arista.common import exceptions as arista_exc
@@ -259,8 +260,8 @@ class AristaProvisionedVlansStorageTestCase(testlib_api.SqlTestCase):
                                         network2_id, vlan2_id, segment_id2)
 
         net_list = db_lib.get_networks(context, tenant)
-        self.assertEqual(net_list, expected_eos_net_list, ('%s != %s' %
-                         (net_list, expected_eos_net_list)))
+        self.assertEqual(net_list, expected_eos_net_list, (
+            '%s != %s' % (net_list, expected_eos_net_list)))
 
 
 BASE_RPC = "networking_arista.ml2.arista_ml2.AristaRPCWrapperJSON."
@@ -287,7 +288,7 @@ class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
         setup_valid_config()
         ndb = db_lib.NeutronNets()
         mock_arista = mock_json_server.return_value
-        mock_arista.runCmds.return_value = [{'chassisId':'01-23-45-67-89-01'}]
+        mock_arista.runCmds.return_value = [{'chassisId': '01-23-45-67-89-01'}]
 
         self.drv = arista_ml2.AristaRPCWrapperJSON(ndb)
         self.drv._server_ip = "10.11.12.13"
@@ -329,9 +330,6 @@ class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
     @patch(JSON_SEND_FUNC)
     def test_register_with_eos(self, mock_send_api_req):
         self.drv.register_with_eos()
-        post_data = {'name': 'keystone', 'password': 'fun',
-                     'tenant': 'tenant_name', 'user': 'neutron',
-                     'authUrl': 'abc://host:5000/v2.0/'}
         calls = [
             ('region/RegionOne', 'PUT',
              [{'name': 'RegionOne', 'syncInterval': 10}])
@@ -361,8 +359,9 @@ class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
     @patch(JSON_SEND_FUNC)
     @patch(RAND_FUNC, _get_random_name)
     def test_sync_end(self, mock_send_api_req):
-        mock_send_api_req.return_value = [{'requester':
-                                           self._get_random_name()}]
+        mock_send_api_req.return_value = [
+            {'requester': self._get_random_name()}
+        ]
         self.drv.current_sync_name = self._get_random_name()
         assert self.drv.sync_end()
         calls = [
@@ -421,10 +420,10 @@ class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
               {'id': 'net2', 'tenantId': 't1', 'shared': False},
               {'id': 'net3', 'tenantId': 't1', 'shared': False}]),
             ('region/RegionOne/segment', 'POST',
-                [{'id': 'segment_id_1', 'networkId': 'net1', 'type': 'vlan',
-                  'segmentationId': 100, 'segmentType': 'static'},
-                 {'id': 'segment_id_1', 'networkId': 'net2', 'type': 'vlan',
-                  'segmentationId': 200, 'segmentType': 'static'}])
+             [{'id': 'segment_id_1', 'networkId': 'net1', 'type': 'vlan',
+               'segmentationId': 100, 'segmentType': 'static'},
+              {'id': 'segment_id_1', 'networkId': 'net2', 'type': 'vlan',
+               'segmentationId': 200, 'segmentType': 'static'}])
         ]
         self._verify_send_api_request_call(mock_send_api_req, calls)
 
@@ -453,10 +452,10 @@ class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
         self.drv.create_network_segments('t1', 'n1', 'net1', segments)
         calls = [
             ('region/RegionOne/segment', 'POST',
-                [{'id': 'segment_id_1', 'networkId': 'n1', 'type': 'vlan',
-                  'segmentationId': 101, 'segmentType': 'static'},
-                 {'id': 'segment_id_2', 'networkId': 'n1', 'type': 'vlan',
-                  'segmentationId': 102, 'segmentType': 'dynamic'}])
+             [{'id': 'segment_id_1', 'networkId': 'n1', 'type': 'vlan',
+               'segmentationId': 101, 'segmentType': 'static'},
+              {'id': 'segment_id_2', 'networkId': 'n1', 'type': 'vlan',
+               'segmentationId': 102, 'segmentType': 'dynamic'}])
         ]
         self._verify_send_api_request_call(mock_send_api_req, calls)
 
@@ -475,8 +474,8 @@ class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
         self.drv.delete_network_segments('t1', segments)
         calls = [
             ('region/RegionOne/segment', 'DELETE',
-                [{'id': 'segment_id_1'},
-                 {'id': 'segment_id_2'}])
+             [{'id': 'segment_id_1'},
+              {'id': 'segment_id_2'}])
         ]
         self._verify_send_api_request_call(mock_send_api_req, calls)
 
@@ -529,161 +528,180 @@ class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
             create_ports.update(port_dict_representation(port))
 
         profiles = {}
+        baremetal_profile = json.dumps({
+            "local_link_information":
+                [{"switch_id": "switch01", "port_id": "Ethernet1"}]})
         for port in port_list:
             profiles[port['portId']] = {'vnic_type': 'normal'}
             if port['device_owner'] == 'baremetal':
                 profiles[port['portId']] = {
                     'vnic_type': 'baremetal',
-                    'profile': '{"local_link_information":'
-                    '[{"switch_id": "switch01", "port_id": "Ethernet1"}]}'}
-        self.drv.create_instance_bulk(self.admin_ctx, tenant_id, create_ports, devices,
+                    'profile': baremetal_profile}
+        self.drv.create_instance_bulk(self.admin_ctx, tenant_id, create_ports,
+                                      devices,
                                       profiles)
         calls = [
             ('region/RegionOne/tenant?tenantId=ten-3', 'GET'),
             ('region/RegionOne/dhcp?tenantId=ten-3', 'POST',
-                [{'id': 'dev-id-0', 'hostId': 'host_0'},
-                 {'id': 'dev-id-4', 'hostId': 'host_4'}]),
+             [{'id': 'dev-id-0', 'hostId': 'host_0'},
+              {'id': 'dev-id-4', 'hostId': 'host_4'}]),
             ('region/RegionOne/vm?tenantId=ten-3', 'POST',
-                [{'id': 'dev-id-1', 'hostId': 'host_1'},
-                 {'id': 'dev-id-5', 'hostId': 'host_5'}]),
+             [{'id': 'dev-id-1', 'hostId': 'host_1'},
+              {'id': 'dev-id-5', 'hostId': 'host_5'}]),
             ('region/RegionOne/baremetal?tenantId=ten-3', 'POST',
-                [{'id': 'dev-id-2', 'hostId': 'host_2'},
-                 {'id': 'dev-id-6', 'hostId': 'host_6'}]),
+             [{'id': 'dev-id-2', 'hostId': 'host_2'},
+              {'id': 'dev-id-6', 'hostId': 'host_6'}]),
             ('region/RegionOne/router?tenantId=ten-3', 'POST',
-                [{'id': 'dev-id-3', 'hostId': 'host_3'},
-                 {'id': 'dev-id-7', 'hostId': 'host_7'}]),
+             [{'id': 'dev-id-3', 'hostId': 'host_3'},
+              {'id': 'dev-id-7', 'hostId': 'host_7'}]),
             ('region/RegionOne/port', 'POST',
-                [{'networkId': 'network-id-0', 'id': 'port-id-0-0',
-                  'tenantId': 'ten-3', 'instanceId': 'dev-id-0',
-                  'name': 'port-0-0', 'hosts': ['host_0'],
-                  'instanceType': 'dhcp', 'vlanType': 'allowed'},
-                 {'networkId': 'network-id-1', 'id': 'port-id-0-1',
-                  'tenantId': 'ten-3', 'instanceId': 'dev-id-0',
-                  'name': 'port-0-1', 'hosts': ['host_0'],
-                  'instanceType': 'dhcp', 'vlanType': 'allowed'},
+             [{'networkId': 'network-id-0', 'id': 'port-id-0-0',
+               'tenantId': 'ten-3', 'instanceId': 'dev-id-0',
+               'name': 'port-0-0', 'hosts': ['host_0'],
+               'instanceType': 'dhcp', 'vlanType': 'allowed'},
+              {'networkId': 'network-id-1', 'id': 'port-id-0-1',
+               'tenantId': 'ten-3', 'instanceId': 'dev-id-0',
+               'name': 'port-0-1', 'hosts': ['host_0'],
+               'instanceType': 'dhcp', 'vlanType': 'allowed'},
 
-                 {'networkId': 'network-id-2', 'id': 'port-id-1-0',
-                  'tenantId': 'ten-3', 'instanceId': 'dev-id-1',
-                  'name': 'port-1-0', 'hosts': ['host_1'],
-                  'instanceType': 'vm', 'vlanType': 'allowed'},
-                 {'networkId': 'network-id-3', 'id': 'port-id-1-1',
-                  'tenantId': 'ten-3', 'instanceId': 'dev-id-1',
-                  'name': 'port-1-1', 'hosts': ['host_1'],
-                  'instanceType': 'vm', 'vlanType': 'allowed'},
+              {'networkId': 'network-id-2', 'id': 'port-id-1-0',
+               'tenantId': 'ten-3', 'instanceId': 'dev-id-1',
+               'name': 'port-1-0', 'hosts': ['host_1'],
+               'instanceType': 'vm', 'vlanType': 'allowed'},
+              {'networkId': 'network-id-3', 'id': 'port-id-1-1',
+               'tenantId': 'ten-3', 'instanceId': 'dev-id-1',
+               'name': 'port-1-1', 'hosts': ['host_1'],
+               'instanceType': 'vm', 'vlanType': 'allowed'},
 
-                 {'networkId': 'network-id-4', 'id': 'port-id-2-0',
-                  'tenantId': 'ten-3', 'instanceId': 'dev-id-2',
-                  'name': 'port-2-0', 'hosts': ['host_2'],
-                  'instanceType': 'baremetal', 'vlanType': 'native'},
-                 {'networkId': 'network-id-5', 'id': 'port-id-2-1',
-                  'tenantId': 'ten-3', 'instanceId': 'dev-id-2',
-                  'name': 'port-2-1', 'hosts': ['host_2'],
-                  'instanceType': 'baremetal', 'vlanType': 'native'},
+              {'networkId': 'network-id-4', 'id': 'port-id-2-0',
+               'tenantId': 'ten-3', 'instanceId': 'dev-id-2',
+               'name': 'port-2-0', 'hosts': ['host_2'],
+               'instanceType': 'baremetal', 'vlanType': 'native'},
+              {'networkId': 'network-id-5', 'id': 'port-id-2-1',
+               'tenantId': 'ten-3', 'instanceId': 'dev-id-2',
+               'name': 'port-2-1', 'hosts': ['host_2'],
+               'instanceType': 'baremetal', 'vlanType': 'native'},
 
-                 {'networkId': 'network-id-6', 'id': 'port-id-3-0',
-                  'tenantId': 'ten-3', 'instanceId': 'dev-id-3',
-                  'name': 'port-3-0', 'hosts': ['host_3'],
-                  'instanceType': 'router', 'vlanType': 'allowed'},
-                 {'networkId': 'network-id-7', 'id': 'port-id-3-1',
-                  'tenantId': 'ten-3', 'instanceId': 'dev-id-3',
-                  'name': 'port-3-1', 'hosts': ['host_3'],
-                  'instanceType': 'router', 'vlanType': 'allowed'},
+              {'networkId': 'network-id-6', 'id': 'port-id-3-0',
+               'tenantId': 'ten-3', 'instanceId': 'dev-id-3',
+               'name': 'port-3-0', 'hosts': ['host_3'],
+               'instanceType': 'router', 'vlanType': 'allowed'},
+              {'networkId': 'network-id-7', 'id': 'port-id-3-1',
+               'tenantId': 'ten-3', 'instanceId': 'dev-id-3',
+               'name': 'port-3-1', 'hosts': ['host_3'],
+               'instanceType': 'router', 'vlanType': 'allowed'},
 
-                 {'networkId': 'network-id-8', 'id': 'port-id-4-0',
-                  'tenantId': 'ten-3', 'instanceId': 'dev-id-4',
-                  'name': 'port-4-0', 'hosts': ['host_4'],
-                  'instanceType': 'dhcp', 'vlanType': 'allowed'},
-                 {'networkId': 'network-id-9', 'id': 'port-id-4-1',
-                  'tenantId': 'ten-3', 'instanceId': 'dev-id-4',
-                  'name': 'port-4-1', 'hosts': ['host_4'],
-                  'instanceType': 'dhcp', 'vlanType': 'allowed'},
+              {'networkId': 'network-id-8', 'id': 'port-id-4-0',
+               'tenantId': 'ten-3', 'instanceId': 'dev-id-4',
+               'name': 'port-4-0', 'hosts': ['host_4'],
+               'instanceType': 'dhcp', 'vlanType': 'allowed'},
+              {'networkId': 'network-id-9', 'id': 'port-id-4-1',
+               'tenantId': 'ten-3', 'instanceId': 'dev-id-4',
+               'name': 'port-4-1', 'hosts': ['host_4'],
+               'instanceType': 'dhcp', 'vlanType': 'allowed'},
 
-                 {'networkId': 'network-id-10', 'id': 'port-id-5-0',
-                  'tenantId': 'ten-3', 'instanceId': 'dev-id-5',
-                  'name': 'port-5-0', 'hosts': ['host_5'],
-                  'instanceType': 'vm', 'vlanType': 'allowed'},
-                 {'networkId': 'network-id-11', 'id': 'port-id-5-1',
-                  'tenantId': 'ten-3', 'instanceId': 'dev-id-5',
-                  'name': 'port-5-1', 'hosts': ['host_5'],
-                  'instanceType': 'vm', 'vlanType': 'allowed'},
+              {'networkId': 'network-id-10', 'id': 'port-id-5-0',
+               'tenantId': 'ten-3', 'instanceId': 'dev-id-5',
+               'name': 'port-5-0', 'hosts': ['host_5'],
+               'instanceType': 'vm', 'vlanType': 'allowed'},
+              {'networkId': 'network-id-11', 'id': 'port-id-5-1',
+               'tenantId': 'ten-3', 'instanceId': 'dev-id-5',
+               'name': 'port-5-1', 'hosts': ['host_5'],
+               'instanceType': 'vm', 'vlanType': 'allowed'},
 
-                 {'networkId': 'network-id-12', 'id': 'port-id-6-0',
-                  'tenantId': 'ten-3', 'instanceId': 'dev-id-6',
-                  'name': 'port-6-0', 'hosts': ['host_6'],
-                  'instanceType': 'baremetal', 'vlanType': 'native'},
-                 {'networkId': 'network-id-13', 'id': 'port-id-6-1',
-                  'tenantId': 'ten-3', 'instanceId': 'dev-id-6',
-                  'name': 'port-6-1', 'hosts': ['host_6'],
-                  'instanceType': 'baremetal', 'vlanType': 'native'},
+              {'networkId': 'network-id-12', 'id': 'port-id-6-0',
+               'tenantId': 'ten-3', 'instanceId': 'dev-id-6',
+               'name': 'port-6-0', 'hosts': ['host_6'],
+               'instanceType': 'baremetal', 'vlanType': 'native'},
+              {'networkId': 'network-id-13', 'id': 'port-id-6-1',
+               'tenantId': 'ten-3', 'instanceId': 'dev-id-6',
+               'name': 'port-6-1', 'hosts': ['host_6'],
+               'instanceType': 'baremetal', 'vlanType': 'native'},
 
-                 {'networkId': 'network-id-14', 'id': 'port-id-7-0',
-                  'tenantId': 'ten-3', 'instanceId': 'dev-id-7',
-                  'name': 'port-7-0', 'hosts': ['host_7'],
-                  'instanceType': 'router', 'vlanType': 'allowed'},
-                 {'networkId': 'network-id-15', 'id': 'port-id-7-1',
-                  'tenantId': 'ten-3', 'instanceId': 'dev-id-7',
-                  'name': 'port-7-1', 'hosts': ['host_7'],
-                  'instanceType': 'router', 'vlanType': 'allowed'}]),
+              {'networkId': 'network-id-14', 'id': 'port-id-7-0',
+               'tenantId': 'ten-3', 'instanceId': 'dev-id-7',
+               'name': 'port-7-0', 'hosts': ['host_7'],
+               'instanceType': 'router', 'vlanType': 'allowed'},
+              {'networkId': 'network-id-15', 'id': 'port-id-7-1',
+               'tenantId': 'ten-3', 'instanceId': 'dev-id-7',
+               'name': 'port-7-1', 'hosts': ['host_7'],
+               'instanceType': 'router', 'vlanType': 'allowed'}]),
 
             ('region/RegionOne/port/port-id-0-0/binding',
-             'POST', [{'portId': 'port-id-0-0', 'hostBinding': [
-                      {'segment': [], 'host': 'host_0'}]}]),
+             'POST', [
+                 {'portId': 'port-id-0-0',
+                  'hostBinding': [{'segment': [], 'host': 'host_0'}]}]),
             ('region/RegionOne/port/port-id-0-1/binding',
-             'POST', [{'portId': 'port-id-0-1', 'hostBinding': [
-                      {'segment': [], 'host': 'host_0'}]}]),
-
+             'POST', [
+                 {'portId': 'port-id-0-1',
+                  'hostBinding': [{'segment': [], 'host': 'host_0'}]}]),
             ('region/RegionOne/port/port-id-1-0/binding',
-             'POST', [{'portId': 'port-id-1-0', 'hostBinding': [
-                      {'segment': [], 'host': 'host_1'}]}]),
+             'POST', [
+                 {'portId': 'port-id-1-0',
+                  'hostBinding': [{'segment': [], 'host': 'host_1'}]}]),
             ('region/RegionOne/port/port-id-1-1/binding',
-             'POST', [{'portId': 'port-id-1-1', 'hostBinding': [
-                      {'segment': [], 'host': 'host_1'}]}]),
-
+             'POST', [
+                 {'portId': 'port-id-1-1',
+                  'hostBinding': [{'segment': [], 'host': 'host_1'}]}]),
             ('region/RegionOne/port/port-id-2-0/binding',
-             'POST', [{'portId': 'port-id-2-0', 'switchBinding': [
+             'POST', [
+                 {'portId': 'port-id-2-0',
+                  'switchBinding': [
                       {'interface': u'Ethernet1', 'host': 'host_2',
                        'segment': [], 'switch': u'switch01'}]}]),
             ('region/RegionOne/port/port-id-2-1/binding',
-             'POST', [{'portId': 'port-id-2-1', 'switchBinding': [
+             'POST', [
+                 {'portId': 'port-id-2-1',
+                  'switchBinding': [
                       {'interface': u'Ethernet1', 'host': 'host_2',
                        'segment': [], 'switch': u'switch01'}]}]),
-
             ('region/RegionOne/port/port-id-3-0/binding',
-             'POST', [{'portId': 'port-id-3-0', 'hostBinding': [
-                      {'segment': [], 'host': 'host_3'}]}]),
+             'POST', [
+                 {'portId': 'port-id-3-0',
+                  'hostBinding': [{'segment': [], 'host': 'host_3'}]}]),
             ('region/RegionOne/port/port-id-3-1/binding',
-             'POST', [{'portId': 'port-id-3-1', 'hostBinding': [
-                      {'segment': [], 'host': 'host_3'}]}]),
-
+             'POST', [
+                 {'portId': 'port-id-3-1',
+                  'hostBinding': [{'segment': [], 'host': 'host_3'}]}]),
             ('region/RegionOne/port/port-id-4-0/binding',
-             'POST', [{'portId': 'port-id-4-0', 'hostBinding': [
-                      {'segment': [], 'host': 'host_4'}]}]),
+             'POST', [
+                 {'portId': 'port-id-4-0',
+                  'hostBinding': [{'segment': [], 'host': 'host_4'}]}]),
             ('region/RegionOne/port/port-id-4-1/binding',
-             'POST', [{'portId': 'port-id-4-1', 'hostBinding': [
-                      {'segment': [], 'host': 'host_4'}]}]),
+             'POST', [
+                 {'portId': 'port-id-4-1',
+                  'hostBinding': [{'segment': [], 'host': 'host_4'}]}]),
 
             ('region/RegionOne/port/port-id-5-0/binding',
-             'POST', [{'portId': 'port-id-5-0', 'hostBinding': [
-                      {'segment': [], 'host': 'host_5'}]}]),
+             'POST', [
+                 {'portId': 'port-id-5-0',
+                  'hostBinding': [{'segment': [], 'host': 'host_5'}]}]),
             ('region/RegionOne/port/port-id-5-1/binding',
-             'POST', [{'portId': 'port-id-5-1', 'hostBinding': [
-                      {'segment': [], 'host': 'host_5'}]}]),
+             'POST', [
+                 {'portId': 'port-id-5-1',
+                  'hostBinding': [{'segment': [], 'host': 'host_5'}]}]),
 
             ('region/RegionOne/port/port-id-6-0/binding',
-             'POST', [{'portId': 'port-id-6-0', 'switchBinding': [
+             'POST', [
+                 {'portId': 'port-id-6-0',
+                  'switchBinding': [
                       {'interface': u'Ethernet1', 'host': 'host_6',
                        'segment': [], 'switch': u'switch01'}]}]),
             ('region/RegionOne/port/port-id-6-1/binding',
-             'POST', [{'portId': 'port-id-6-1', 'switchBinding': [
+             'POST', [
+                 {'portId': 'port-id-6-1',
+                  'switchBinding': [
                       {'interface': u'Ethernet1', 'host': 'host_6',
                        'segment': [], 'switch': u'switch01'}]}]),
 
             ('region/RegionOne/port/port-id-7-0/binding',
-             'POST', [{'portId': 'port-id-7-0', 'hostBinding': [
-                      {'segment': [], 'host': 'host_7'}]}]),
+             'POST', [
+                 {'portId': 'port-id-7-0',
+                  'hostBinding': [{'segment': [], 'host': 'host_7'}]}]),
             ('region/RegionOne/port/port-id-7-1/binding',
-             'POST', [{'portId': 'port-id-7-1', 'hostBinding': [
-                      {'segment': [], 'host': 'host_7'}]}]),
+             'POST', [
+                 {'portId': 'port-id-7-1',
+                  'hostBinding': [{'segment': [], 'host': 'host_7'}]}]),
         ]
         self._verify_send_api_request_call(mock_send_api_req, calls)
 
@@ -749,8 +767,8 @@ class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
                'instanceType': 'vm', 'vlanType': 'allowed'}]),
             ('region/RegionOne/port/p1/binding', 'POST',
              [{'portId': 'p1', 'hostBinding': [{'host': 'h1', 'segment': [{
-               'id': 'segment_id_1', 'type': 'vlan', 'segmentationId': 101,
-               'networkId': 'n1', 'segment_type': 'static'}]}]}]),
+                 'id': 'segment_id_1', 'type': 'vlan', 'segmentationId': 101,
+                 'networkId': 'n1', 'segment_type': 'static'}]}]}]),
         ]
         self._verify_send_api_request_call(mock_send_api_req, calls)
 
@@ -794,10 +812,16 @@ class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
                'networkId': 'n1', 'instanceId': 'bm1', 'name': 'port1',
                'instanceType': 'baremetal', 'vlanType': 'native'}]),
             ('region/RegionOne/port/p1/binding', 'POST',
-             [{'portId': 'p1', 'switchBinding': [{'host': 'h1',
-               'switch': 'switch01', 'interface': 'Ethernet1', 'segment': [{
-                   'id': 'segment_id_1', 'type': 'vlan', 'segmentationId': 101,
-                   'networkId': 'n1', 'segment_type': 'static'}]}]}]),
+             [{'portId': 'p1', 'switchBinding': [
+                 {'host': 'h1',
+                  'switch': 'switch01',
+                  'interface': 'Ethernet1',
+                  'segment': [{
+                      'id': 'segment_id_1',
+                      'type': 'vlan',
+                      'segmentationId': 101,
+                      'networkId': 'n1',
+                      'segment_type': 'static'}]}]}]),
         ]
         self._verify_send_api_request_call(mock_send_api_req, calls)
 
@@ -816,8 +840,8 @@ class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
         calls = [
             ('region/RegionOne/port/p1/binding', 'DELETE',
              [{'portId': 'p1', 'switchBinding':
-              [{'host': 'h1', 'switch': 'switch01', 'segment': [],
-                'interface': 'Ethernet1'}]}]),
+                 [{'host': 'h1', 'switch': 'switch01', 'segment': [],
+                   'interface': 'Ethernet1'}]}]),
             ('region/RegionOne/port?portId=p1&id=bm1&type=baremetal',
              'DELETE', [port]),
             ('region/RegionOne/baremetal', 'DELETE', [{'id': 'bm1'}])
@@ -915,7 +939,7 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
         setup_valid_config()
         ndb = db_lib.NeutronNets()
         mock_arista = mock_json_server.return_value
-        mock_arista.runCmds.return_value = [{'chassisId':'01-23-45-67-89-01'}]
+        mock_arista.runCmds.return_value = [{'chassisId': '01-23-45-67-89-01'}]
         self.drv = arista_ml2.AristaRPCWrapperEapi(ndb)
         self.drv._server_ip = "10.11.12.13"
         self.region = 'RegionOne'
@@ -1029,7 +1053,7 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
                           'network_type': 'vlan',
                           'id': 'segment_id_1'}],
             'shared': False,
-            }
+        }
         self.drv.create_network(tenant_id, network)
         cmd1 = ['show openstack agent uuid']
         cmd2 = ['enable', 'configure', 'cvx', 'service openstack',
@@ -1038,9 +1062,9 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
                 ]
         for seg in network['segments']:
             is_dynamic = seg.get('is_dynamic', False)
-            cmd2.append('segment %s type %s id %d %s' % (seg['id'],
-                        seg['network_type'], seg['segmentation_id'],
-                        'dynamic' if is_dynamic else 'static'))
+            cmd2.append('segment %s type %s id %d %s' % (
+                seg['id'], seg['network_type'],
+                seg['segmentation_id'], 'dynamic' if is_dynamic else 'static'))
         cmd2.append('no shared')
 
         self._verify_send_eapi_request_calls(mock_send_eapi_req, [cmd1, cmd2])
@@ -1085,7 +1109,7 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
                           'network_type': 'vlan',
                           'id': segment_id % net_id}],
             'shared': True,
-            } for net_id in range(1, num_networks)
+        } for net_id in range(1, num_networks)
         ]
 
         self.drv.create_network_bulk(tenant_id, networks)
@@ -1100,7 +1124,7 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
             cmd2.append('network id net-id-%d name "net-name-%d"' %
                         (net_id, net_id))
             cmd2.append('segment %s type %s id %d %s' % (
-                        segment_id % net_id, network_type, net_id, 'static'))
+                segment_id % net_id, network_type, net_id, 'static'))
             cmd2.append('shared')
         self._verify_send_eapi_request_calls(mock_send_eapi_req, [cmd1, cmd2])
 
@@ -1250,15 +1274,15 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
                 if device_owner == 'network:dhcp':
                     cmd2.append('network id %s' % network_id)
                     cmd2.append('dhcp id %s hostid %s port-id %s name "%s"' % (
-                                device_id, host, port_id, port_name))
+                        device_id, host, port_id, port_name))
                 elif device_owner == 'compute':
                     cmd2.append('vm id %s hostid %s' % (device_id, host))
                     cmd2.append('port id %s name "%s" network-id %s' % (
-                                port_id, port_name, network_id))
+                        port_id, port_name, network_id))
                 elif device_owner == n_const.DEVICE_OWNER_DVR_INTERFACE:
                     cmd2.append('instance id %s type router' % device_id)
                     cmd2.append('port id %s network-id %s hostid %s' % (
-                                port_id, network_id, host))
+                        port_id, network_id, host))
                 net_count += 1
 
         self._verify_send_eapi_request_calls(mock_send_eapi_req, [cmd1, cmd2])
@@ -1331,10 +1355,6 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
     @patch(EAPI_SEND_FUNC)
     def test_register_with_eos(self, mock_send_eapi_req):
         self.drv.register_with_eos()
-        auth = fake_keystone_info_class()
-        keystone_url = '%s://%s:%s/v2.0/' % (auth.auth_protocol,
-                                             auth.auth_host,
-                                             auth.auth_port)
         cmd1 = ['show openstack agent uuid']
         cmd2 = ['enable',
                 'configure',
@@ -1370,7 +1390,7 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
             'network_name': 'net-name-%d' % net_id,
             'segments': segments,
             'shared': True,
-            } for net_id in range(1, num_networks + 1)
+        } for net_id in range(1, num_networks + 1)
         ]
 
         self.drv.create_network_bulk(tenant_id, networks, sync=True)
@@ -1388,9 +1408,9 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
                         (net_id, net_id))
             for seg in segments:
                 is_dynamic = seg.get('is_dynamic', False)
-                cmd2.append('segment %s type %s id %d %s' % (seg['id'],
-                            seg['network_type'], seg['segmentation_id'],
-                            'dynamic' if is_dynamic else 'static'))
+                cmd2.append('segment %s type %s id %d %s' % (
+                    seg['id'], seg['network_type'], seg['segmentation_id'],
+                    'dynamic' if is_dynamic else 'static'))
             cmd2.append('shared')
 
         # Send heartbeat
@@ -1399,9 +1419,9 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
         cmd2.append('network id net-id-101 name "net-name-101"')
         for seg in segments:
             is_dynamic = seg.get('is_dynamic', False)
-            cmd2.append('segment %s type %s id %d %s' % (seg['id'],
-                        seg['network_type'], seg['segmentation_id'],
-                        'dynamic' if is_dynamic else 'static'))
+            cmd2.append('segment %s type %s id %d %s' % (
+                seg['id'], seg['network_type'],
+                seg['segmentation_id'], 'dynamic' if is_dynamic else 'static'))
         cmd2.append('shared')
         # Send the final heartbeat
         cmd2.append('sync heartbeat')
@@ -1504,7 +1524,7 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
                     'network_id': 'network-id-%d' % net_count,
                     'name': 'port-%d-%d' % (device_id, port_id),
                     'tenant_id': tenant_id
-                    }
+                }
                 port_list.append(port)
                 net_count += 1
 
@@ -1516,7 +1536,8 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
 
         self.drv.cli_commands[arista_ml2.CMD_INSTANCE] = 'instance'
         context = get_admin_context()
-        self.drv.create_instance_bulk(context, tenant_id, create_ports, devices,
+        self.drv.create_instance_bulk(context, tenant_id, create_ports,
+                                      devices,
                                       port_profiles=port_profiles, sync=True)
         cmd1 = ['show openstack agent uuid']
         cmd2 = ['enable',
@@ -1540,15 +1561,15 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
                 if device_owner == n_const.DEVICE_OWNER_DHCP:
                     cmd2.append('network id %s' % network_id)
                     cmd2.append('dhcp id %s hostid %s port-id %s name "%s"' % (
-                                vm_id, host, port_id, port_name))
+                        vm_id, host, port_id, port_name))
                 elif device_owner == 'compute':
                     cmd2.append('vm id %s hostid %s' % (vm_id, host))
                     cmd2.append('port id %s name "%s" network-id %s' % (
-                                port_id, port_name, network_id))
+                        port_id, port_name, network_id))
                 elif device_owner == n_const.DEVICE_OWNER_DVR_INTERFACE:
                     cmd2.append('instance id %s type router' % device_id)
                     cmd2.append('port id %s network-id %s hostid %s' % (
-                                port_id, network_id, host))
+                        port_id, network_id, host))
                 if count == (num_devices - 1):
                     # Send heartbeat
                     cmd2.append('sync heartbeat')
@@ -1605,7 +1626,7 @@ class NegativeRPCWrapperTestCase(testlib_api.SqlTestCase):
     def test_exception_is_raised_on_json_server_error(self, mock_json_server):
         # Mock for maintain_connections
         mock_arista = mock_json_server.return_value
-        mock_arista.runCmds.return_value = [{'chassisId':'01-23-45-67-89-01'}]
+        mock_arista.runCmds.return_value = [{'chassisId': '01-23-45-67-89-01'}]
 
         ndb = db_lib.NeutronNets()
         drv = arista_ml2.AristaRPCWrapperEapi(ndb)
@@ -1622,6 +1643,7 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
     all the APIs as they would be invoked in real world scenarios and
     verifies the functionality.
     """
+
     def setUp(self):
         super(RealNetStorageAristaDriverTestCase, self).setUp()
         setup_valid_config()
@@ -1643,22 +1665,26 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
                                                     segmentation_id,
                                                     context=self.admin_ctx)
         self.drv.create_network_precommit(network_context)
-        net_provisioned = db_lib.is_network_provisioned(self.admin_ctx, tenant_id, network_id)
+        net_provisioned = db_lib.is_network_provisioned(self.admin_ctx,
+                                                        tenant_id, network_id)
         self.assertTrue(net_provisioned, 'The network should be created')
 
         expected_num_nets = 1
-        num_nets_provisioned = db_lib.num_nets_provisioned(self.admin_ctx, tenant_id)
+        num_nets_provisioned = db_lib.num_nets_provisioned(self.admin_ctx,
+                                                           tenant_id)
         self.assertEqual(expected_num_nets, num_nets_provisioned,
                          'There should be %d nets, not %d' %
                          (expected_num_nets, num_nets_provisioned))
 
         # Now test the delete network
         self.drv.delete_network_precommit(network_context)
-        net_provisioned = db_lib.is_network_provisioned(self.admin_ctx, tenant_id, network_id)
+        net_provisioned = db_lib.is_network_provisioned(self.admin_ctx,
+                                                        tenant_id, network_id)
         self.assertFalse(net_provisioned, 'The network should be created')
 
         expected_num_nets = 0
-        num_nets_provisioned = db_lib.num_nets_provisioned(self.admin_ctx, tenant_id)
+        num_nets_provisioned = db_lib.num_nets_provisioned(self.admin_ctx,
+                                                           tenant_id)
         self.assertEqual(expected_num_nets, num_nets_provisioned,
                          'There should be %d nets, not %d' %
                          (expected_num_nets, num_nets_provisioned))
@@ -1755,11 +1781,14 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
         ndb.create_network(n3_context, {'network': n3_context.current})
 
         # Create some networks in Arista db
-        db_lib.remember_network_segment(context, 't1', 'n1', 10, 'segment_id_10')
-        db_lib.remember_network_segment(context, 't2', 'n2', 20, 'segment_id_20')
+        db_lib.remember_network_segment(context, 't1', 'n1', 10,
+                                        'segment_id_10')
+        db_lib.remember_network_segment(context, 't2', 'n2', 20,
+                                        'segment_id_20')
         db_lib.remember_network_segment(context, 'admin',
                                         'ha-network', 100, 'segment_id_100')
-        db_lib.remember_network_segment(context, 't3', 'n3', 30, 'segment_id_30')
+        db_lib.remember_network_segment(context, 't3', 'n3', 30,
+                                        'segment_id_30')
 
         # Initialize the driver which should clean up the extra networks
         self.drv.initialize()
@@ -1767,7 +1796,7 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
         adb_networks = db_lib.get_networks(context, tenant_id='any')
 
         # 'n3' should now be deleted from the Arista DB
-        assert(set(('n1', 'n2', 'ha-network')) == set(adb_networks.keys()))
+        assert (set(('n1', 'n2', 'ha-network')) == set(adb_networks.keys()))
 
     def _get_network_context(self, tenant_id, net_id, seg_id, context=None):
         network = {'id': net_id,
@@ -1781,7 +1810,8 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
                              'network_type': 'vlan'}]
         return FakeNetworkContext(network, network_segments, network, context)
 
-    def _get_port_context(self, port_id, tenant_id, net_id, vm_id, network, context=None):
+    def _get_port_context(self, port_id, tenant_id, net_id, vm_id, network,
+                          context=None):
         port = {'device_id': vm_id,
                 'device_owner': 'compute',
                 'binding:host_id': 'ubuntu1',
@@ -1805,14 +1835,16 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
 class FakeNetworkContext(object):
     """To generate network context for testing purposes only."""
 
-    def __init__(self, network, segments=None, original_network=None, context=None):
+    def __init__(self, network, segments=None, original_network=None,
+                 context=None):
         self._network = network
         self._original_network = original_network
         self._segments = segments
         self.is_admin = False
         self.tenant_id = network['tenant_id']
         self.session = db.get_session()
-        self._plugin_context = FakePluginContext(self.tenant_id) if context is None else context
+        self._plugin_context = FakePluginContext(
+            self.tenant_id) if context is None else context
 
     @property
     def current(self):
@@ -1949,7 +1981,8 @@ class SyncServiceTest(testlib_api.SqlTestCase):
         segmentation_id = 42
         segment_id = 'segment_id_1'
         db_lib.remember_tenant(self.admin_ctx, tenant_id)
-        db_lib.remember_network_segment(self.admin_ctx, tenant_id, network_id, segmentation_id,
+        db_lib.remember_network_segment(self.admin_ctx, tenant_id, network_id,
+                                        segmentation_id,
                                         segment_id)
 
         self.rpc.get_tenants.return_value = {}
@@ -1985,7 +2018,7 @@ class SyncServiceTest(testlib_api.SqlTestCase):
                         "Seen: %s\nExpected: %s" % (
                             self.rpc.mock_calls,
                             expected_calls,
-                            )
+                        )
                         )
 
         db_lib.forget_network_segment(self.admin_ctx, tenant_id, network_id)
@@ -2022,7 +2055,7 @@ class SyncServiceTest(testlib_api.SqlTestCase):
                         "Seen: %s\nExpected: %s" % (
                             self.rpc.mock_calls,
                             expected_calls,
-                            )
+                        )
                         )
 
     def test_synchronize_one_network(self):
@@ -2034,14 +2067,16 @@ class SyncServiceTest(testlib_api.SqlTestCase):
         tenant_1_net_1_id = 'ten-1-net-1'
         tenant_1_net_1_seg_id = 11
         db_lib.remember_tenant(self.admin_ctx, tenant_1_id)
-        db_lib.remember_network_segment(self.admin_ctx, tenant_1_id, tenant_1_net_1_id,
+        db_lib.remember_network_segment(self.admin_ctx, tenant_1_id,
+                                        tenant_1_net_1_id,
                                         tenant_1_net_1_seg_id, 'segment_id_11')
 
         tenant_2_id = 'tenant-2'
         tenant_2_net_1_id = 'ten-2-net-1'
         tenant_2_net_1_seg_id = 21
         db_lib.remember_tenant(self.admin_ctx, tenant_2_id)
-        db_lib.remember_network_segment(self.admin_ctx, tenant_2_id, tenant_2_net_1_id,
+        db_lib.remember_network_segment(self.admin_ctx, tenant_2_id,
+                                        tenant_2_net_1_id,
                                         tenant_2_net_1_seg_id, 'segment_id_21')
 
         self.rpc.get_tenants.return_value = {
@@ -2095,11 +2130,13 @@ class SyncServiceTest(testlib_api.SqlTestCase):
                         "Seen: %s\nExpected: %s" % (
                             self.rpc.mock_calls,
                             expected_calls,
-                            )
+                        )
                         )
 
-        db_lib.forget_network_segment(self.admin_ctx, tenant_1_id, tenant_1_net_1_id)
-        db_lib.forget_network_segment(self.admin_ctx, tenant_2_id, tenant_2_net_1_id)
+        db_lib.forget_network_segment(self.admin_ctx, tenant_1_id,
+                                      tenant_1_net_1_id)
+        db_lib.forget_network_segment(self.admin_ctx, tenant_2_id,
+                                      tenant_2_net_1_id)
         db_lib.forget_tenant(self.admin_ctx, tenant_1_id)
         db_lib.forget_tenant(self.admin_ctx, tenant_2_id)
 
@@ -2112,14 +2149,16 @@ class SyncServiceTest(testlib_api.SqlTestCase):
         tenant_1_net_1_id = u'ten-1-net-1'
         tenant_1_net_1_seg_id = 11
         db_lib.remember_tenant(self.admin_ctx, tenant_1_id)
-        db_lib.remember_network_segment(self.admin_ctx, tenant_1_id, tenant_1_net_1_id,
+        db_lib.remember_network_segment(self.admin_ctx, tenant_1_id,
+                                        tenant_1_net_1_id,
                                         tenant_1_net_1_seg_id, 'segment_id_11')
 
         tenant_2_id = u'tenant-2'
         tenant_2_net_1_id = u'ten-2-net-1'
         tenant_2_net_1_seg_id = 21
         db_lib.remember_tenant(self.admin_ctx, tenant_2_id)
-        db_lib.remember_network_segment(self.admin_ctx, tenant_2_id, tenant_2_net_1_id,
+        db_lib.remember_network_segment(self.admin_ctx, tenant_2_id,
+                                        tenant_2_net_1_id,
                                         tenant_2_net_1_seg_id, 'segment_id_21')
 
         self.rpc.get_tenants.return_value = {}
@@ -2170,7 +2209,7 @@ class SyncServiceTest(testlib_api.SqlTestCase):
                         "Seen: %s\nExpected: %s" % (
                             self.rpc.mock_calls,
                             expected_calls,
-                            )
+                        )
                         )
         # Check if tenant 1 networks are created. It must be one of the two
         # methods.
@@ -2179,7 +2218,7 @@ class SyncServiceTest(testlib_api.SqlTestCase):
                         "Seen: %s\nExpected: %s" % (
                             self.rpc.mock_calls,
                             expected_calls,
-                            )
+                        )
                         )
         # Check if tenant 2 networks are created. It must be one of the two
         # methods.
@@ -2188,7 +2227,7 @@ class SyncServiceTest(testlib_api.SqlTestCase):
                         "Seen: %s\nExpected: %s" % (
                             self.rpc.mock_calls,
                             expected_calls,
-                            )
+                        )
                         )
         # Check if the sync end methods are invoked.
         self.assertTrue(self.rpc.mock_calls[idx + 2:] ==
@@ -2196,11 +2235,13 @@ class SyncServiceTest(testlib_api.SqlTestCase):
                         "Seen: %s\nExpected: %s" % (
                             self.rpc.mock_calls,
                             expected_calls,
-                            )
+                        )
                         )
 
-        db_lib.forget_network_segment(self.admin_ctx, tenant_1_id, tenant_1_net_1_id)
-        db_lib.forget_network_segment(self.admin_ctx, tenant_2_id, tenant_2_net_1_id)
+        db_lib.forget_network_segment(self.admin_ctx, tenant_1_id,
+                                      tenant_1_net_1_id)
+        db_lib.forget_network_segment(self.admin_ctx, tenant_2_id,
+                                      tenant_2_net_1_id)
         db_lib.forget_tenant(self.admin_ctx, tenant_1_id)
         db_lib.forget_tenant(self.admin_ctx, tenant_2_id)
 

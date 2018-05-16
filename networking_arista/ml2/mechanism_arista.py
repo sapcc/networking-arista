@@ -13,13 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import neutron.context as neutron_context
-from neutron.common import constants as n_const, config as common_config
-from neutron.db import securitygroups_db as sg_db, models_v2
+from neutron.common import config as common_config
+from neutron.common import constants as n_const
+from neutron.context import get_admin_context
+from neutron.db import models_v2
+from neutron.db import securitygroups_db as sg_db
 from neutron.extensions import portbindings
 from neutron.plugins.common import constants as p_const
-from neutron.plugins.ml2 import driver_api
 from neutron.plugins.ml2.common import exceptions as ml2_exc
+from neutron.plugins.ml2 import driver_api
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_service import loopingcall
@@ -60,11 +62,13 @@ class AristaDriver(driver_api.MechanismDriver):
     Does not send network provisioning request if the network has already been
     provisioned before for the given port.
     """
+
     def __init__(self, rpc=None):
         self.ndb = db_lib.NeutronNets()
         confg = cfg.CONF.ml2_arista
         self.segmentation_type = db_lib.VLAN_SEGMENTATION
-        self.timer = loopingcall.FixedIntervalLoopingCall(self._synchronization_thread)
+        self.timer = loopingcall.FixedIntervalLoopingCall(
+            self._synchronization_thread)
         self.sync_timeout = confg['sync_interval']
         self.managed_physnets = confg['managed_physnets']
 
@@ -100,7 +104,7 @@ class AristaDriver(driver_api.MechanismDriver):
             self.rpc.register_with_eos()
             self.rpc.check_supported_features()
 
-        context = neutron_context.get_admin_context()
+        context = get_admin_context()
         self._cleanup_db(context)
         # Registering with EOS updates self.rpc.region_updated_time. Clear it
         # to force an initial sync
@@ -142,7 +146,8 @@ class AristaDriver(driver_api.MechanismDriver):
         shared_net = network['shared']
 
         plugin_context = context._plugin_context
-        if db_lib.is_network_provisioned(plugin_context, tenant_id, network_id):
+        if db_lib.is_network_provisioned(plugin_context, tenant_id,
+                                         network_id):
             try:
                 network_dict = {
                     'network_id': network_id,
@@ -179,8 +184,8 @@ class AristaDriver(driver_api.MechanismDriver):
         new_network = context.current
         orig_network = context.original
         plugin_context = context._plugin_context
-        if ((new_network['name'] != orig_network['name']) or
-           (new_network['shared'] != orig_network['shared'])):
+        if (new_network['name'] != orig_network['name'] or
+                new_network['shared'] != orig_network['shared']):
             network_id = new_network['id']
             network_name = new_network['name']
             tenant_id = new_network['tenant_id'] or INTERNAL_TENANT_ID
@@ -209,8 +214,10 @@ class AristaDriver(driver_api.MechanismDriver):
         network_id = network['id']
         tenant_id = network['tenant_id'] or INTERNAL_TENANT_ID
         plugin_context = context._plugin_context
-        if db_lib.is_network_provisioned(plugin_context, tenant_id, network_id):
-            if db_lib.are_ports_attached_to_network(plugin_context, network_id):
+        if db_lib.is_network_provisioned(plugin_context, tenant_id,
+                                         network_id):
+            if db_lib.are_ports_attached_to_network(plugin_context,
+                                                    network_id):
                 LOG.info(_LI('Network %s can not be deleted as it '
                              'has ports attached to it'), network_id)
                 raise ml2_exc.MechanismDriverError(
@@ -447,7 +454,7 @@ class AristaDriver(driver_api.MechanismDriver):
         port_id = orig_port['id']
 
         if (new_host != orig_host and
-            orig_status == n_const.PORT_STATUS_ACTIVE and
+                orig_status == n_const.PORT_STATUS_ACTIVE and
                 new_status == n_const.PORT_STATUS_DOWN):
             LOG.debug("Handling port migration for: %s " % orig_port)
             network_id = orig_port['network_id']
@@ -481,7 +488,7 @@ class AristaDriver(driver_api.MechanismDriver):
         new_host = context.host
 
         if (new_host != orig_host and
-            orig_status == n_const.PORT_STATUS_ACTIVE and
+                orig_status == n_const.PORT_STATUS_ACTIVE and
                 new_status == n_const.PORT_STATUS_DOWN):
 
             self._try_to_release_dynamic_segment(context, migration=True)
@@ -496,12 +503,12 @@ class AristaDriver(driver_api.MechanismDriver):
             tenant_id = self._network_owner_tenant(context, network_id,
                                                    tenant_id)
             for binding_level in context._original_binding_levels:
-                if self._network_provisioned(context,
-                    tenant_id, network_id,
+                if self._network_provisioned(
+                        context, tenant_id, network_id,
                         segment_id=binding_level.segment_id):
                     # Removing the port form original host
                     self._delete_port(context, orig_port, orig_host, tenant_id,
-                                          segments=[binding_level])
+                                      segments=[binding_level])
 
                     # If segment id is not bound to any port, then
                     # remove it from EOS
@@ -521,8 +528,8 @@ class AristaDriver(driver_api.MechanismDriver):
                                                              segment_info)
                             # Remove the segment from the provisioned
                             # network DB.
-                            db_lib.forget_network_segment(plugin_context,
-                                tenant_id, network_id,
+                            db_lib.forget_network_segment(
+                                plugin_context, tenant_id, network_id,
                                 binding_level.segment_id)
                         except arista_exc.AristaRpcError:
                             LOG.info(EOS_UNREACHABLE_MSG)
@@ -576,14 +583,13 @@ class AristaDriver(driver_api.MechanismDriver):
                 LOG.info(
                     _LI("Adding %s to provisioned network database"), seg)
                 db_lib.remember_tenant(plugin_context, tenant_id)
-                db_lib.remember_network_segment(plugin_context,
-                    tenant_id, network_id,
-                    seg[driver_api.SEGMENTATION_ID],
-                    seg[driver_api.ID])
+                db_lib.remember_network_segment(
+                    plugin_context, tenant_id, network_id,
+                    seg[driver_api.SEGMENTATION_ID], seg[driver_api.ID])
 
         port_down = False
-        if(new_port['device_owner'] ==
-           n_const.DEVICE_OWNER_DVR_INTERFACE):
+        if (new_port['device_owner'] ==
+                n_const.DEVICE_OWNER_DVR_INTERFACE):
             # We care about port status only for DVR ports because
             # for DVR, a single port exists on multiple hosts. If a port
             # is no longer needed on a host then the driver gets a
@@ -593,8 +599,8 @@ class AristaDriver(driver_api.MechanismDriver):
 
         if host and not port_down:
             port_host_filter = None
-            if(new_port['device_owner'] ==
-               n_const.DEVICE_OWNER_DVR_INTERFACE):
+            if (new_port['device_owner'] ==
+                    n_const.DEVICE_OWNER_DVR_INTERFACE):
                 # <port, host> uniquely identifies a DVR port. Other
                 # ports are identified by just the port id
                 port_host_filter = host
@@ -611,13 +617,14 @@ class AristaDriver(driver_api.MechanismDriver):
                                    device_id, host, port_id,
                                    network_id, tenant_id)
             else:
-                if(new_port['device_id'] != orig_port['device_id'] or
-                   context.host != context.original_host or
-                   new_port['network_id'] != orig_port['network_id'] or
-                   new_port['tenant_id'] != orig_port['tenant_id']):
+                if (new_port['device_id'] != orig_port['device_id'] or
+                        context.host != context.original_host or
+                        new_port['network_id'] != orig_port['network_id'] or
+                        new_port['tenant_id'] != orig_port['tenant_id']):
                     LOG.info("Updating the port")
                     # Port exists in the DB. Update it
-                    db_lib.update_port(plugin_context, device_id, host, port_id,
+                    db_lib.update_port(plugin_context, device_id, host,
+                                       port_id,
                                        network_id, tenant_id)
         else:  # Unbound or down port does not concern us
             orig_host = context.original_host
@@ -689,18 +696,20 @@ class AristaDriver(driver_api.MechanismDriver):
                                                       port_host_filter)
         # If network does not exist under this tenant,
         # it may be a shared network. Get shared network owner Id
-        net_provisioned = self._network_provisioned(context, 
+        net_provisioned = self._network_provisioned(context,
                                                     tenant_id, network_id)
         for seg in seg_info:
             if not self._network_provisioned(context, tenant_id, network_id,
-                                             segmentation_id=seg[driver_api.SEGMENTATION_ID]):
+                                             segmentation_id=seg[
+                                                 driver_api.SEGMENTATION_ID]):
                 net_provisioned = False
                 break
         segments = []
         if net_provisioned:
             if self.rpc.hpb_supported():
                 segments = seg_info
-                all_segments = self.ndb.get_all_network_segments(plugin_context, network_id)
+                all_segments = self.ndb.get_all_network_segments(
+                    plugin_context, network_id)
                 try:
                     self.rpc.create_network_segments(
                         tenant_id, network_id,
@@ -711,7 +720,8 @@ class AristaDriver(driver_api.MechanismDriver):
             else:
                 # For non HPB cases, the port is bound to the static
                 # segment
-                segments = self.ndb.get_network_segments(plugin_context, network_id)
+                segments = self.ndb.get_network_segments(plugin_context,
+                                                         network_id)
 
         try:
             orig_host = context.original_host
@@ -727,13 +737,13 @@ class AristaDriver(driver_api.MechanismDriver):
                     # connected to the port was deleted or its in DOWN
                     # state. So delete the old port on the old host.
                     self._delete_port(context, orig_port, orig_host, tenant_id,
-                                          segments=segments)
+                                      segments=segments)
                 except ml2_exc.MechanismDriverError:
                     # If deleting a port fails, then not much can be done
                     # about it. Log a warning and move on.
                     LOG.warning(UNABLE_TO_DELETE_PORT_MSG)
             if port_provisioned and net_provisioned and hostname and \
-                    is_vm_boot and not port_down:
+                is_vm_boot and not port_down:
                 LOG.info(_LI("Port plugged into network"))
                 # Plug port into the network only if it exists in the db
                 # and is bound to a host and the port is up.
@@ -803,7 +813,8 @@ class AristaDriver(driver_api.MechanismDriver):
         self._try_to_release_dynamic_segment(context)
 
         try:
-            self._delete_port(context, port, host, tenant_id, segments=seg_info)
+            self._delete_port(context, port, host, tenant_id,
+                              segments=seg_info)
             self._delete_segment(context, tenant_id)
         except ml2_exc.MechanismDriverError:
             # Can't do much if deleting a port failed.
@@ -887,7 +898,8 @@ class AristaDriver(driver_api.MechanismDriver):
                                                          [segment_info])
                         # Remove the segment from the provisioned network DB.
                         db_lib.forget_network_segment(plugin_context,
-                            tenant_id, network_id, binding_level.segment_id)
+                                                      tenant_id, network_id,
+                                                      binding_level.segment_id)
                     except arista_exc.AristaRpcError:
                         LOG.info(EOS_UNREACHABLE_MSG)
                 else:
@@ -925,11 +937,10 @@ class AristaDriver(driver_api.MechanismDriver):
             driver = binding_level.get(driver_api.BOUND_DRIVER)
             bound_drivers.append(driver)
             if (bound_segment and
-                bound_segment.get('physical_network') == physnet and
+                    bound_segment.get('physical_network') == physnet and
                     bound_segment.get('network_type') == p_const.TYPE_VLAN):
                 segment_id = bound_segment.get('id')
                 break
-
 
         plugin_context = context._plugin_context
 
@@ -960,8 +971,8 @@ class AristaDriver(driver_api.MechanismDriver):
         """
         plugin_context = context._plugin_context
         objects_for_tenant = (
-                db_lib.num_nets_provisioned(plugin_context, tenant_id) +
-                db_lib.num_vms_provisioned(plugin_context, tenant_id)
+            db_lib.num_nets_provisioned(plugin_context, tenant_id) +
+            db_lib.num_vms_provisioned(plugin_context, tenant_id)
         )
         if not objects_for_tenant:
             db_lib.forget_tenant(plugin_context, tenant_id)
@@ -992,14 +1003,16 @@ class AristaDriver(driver_api.MechanismDriver):
             arista_nets = db.AristaProvisionedNets
 
             missing_nets = \
-                session.query(arista_nets.network_id).\
-                    outerjoin(models_v2.Network,
-                    models_v2.Network.id == arista_nets.network_id
-                ).filter(models_v2.Network.id.is_(None)).subquery()
+                session.query(arista_nets.network_id). \
+                outerjoin(models_v2.Network,
+                          models_v2.Network.id == arista_nets.network_id
+                          ).filter(
+                    models_v2.Network.id.is_(None)
+                ).subquery()
 
-            session.query(arista_vms).\
+            session.query(arista_vms). \
                 filter(arista_vms.network_id.in_(missing_nets)).delete(False)
-            session.query(arista_nets).\
+            session.query(arista_nets). \
                 filter(arista_nets.network_id.in_(missing_nets)).delete(False)
 
     def _network_provisioned(self, context, tenant_id, network_id,
@@ -1007,10 +1020,10 @@ class AristaDriver(driver_api.MechanismDriver):
         # If network does not exist under this tenant,
         # it may be a shared network.
         plugin_context = context._plugin_context
-        return db_lib.is_network_provisioned(plugin_context, tenant_id,
-                                             network_id, segmentation_id,
-                                             segment_id) or \
-               self.ndb.get_shared_network_owner_id(plugin_context, network_id)
+        return db_lib.is_network_provisioned(
+            plugin_context, tenant_id, network_id, segmentation_id,
+            segment_id) or \
+            self.ndb.get_shared_network_owner_id(plugin_context, network_id)
 
     def create_security_group(self, context, sg):
         pass
@@ -1070,13 +1083,13 @@ class AristaDriver(driver_api.MechanismDriver):
 
 
 def cli():
-    import sys
     import json
-    from oslo_config import cfg
-    from neutron.context import get_admin_context
-    from neutron.plugins.ml2.models import PortBindingLevel,\
-        NetworkSegment
+    import sys
+
     from neutron.db.models_v2 import Port
+    from neutron.plugins.ml2.models import NetworkSegment
+    from neutron.plugins.ml2.models import PortBindingLevel
+    from oslo_config import cfg
     from sqlalchemy.orm import contains_eager, joinedload, relationship
 
     config.CONF.register_cli_opts([

@@ -15,11 +15,6 @@
 import copy
 import threading
 
-from oslo_config import cfg
-from oslo_log import helpers as log_helpers
-from oslo_log import log as logging
-from oslo_utils import excutils
-
 from neutron.api.rpc.agentnotifiers import l3_rpc_agent_api
 from neutron.api.rpc.handlers import l3_rpc
 from neutron.common import constants as n_const
@@ -32,6 +27,10 @@ from neutron.db import l3_agentschedulers_db
 from neutron.db import l3_gwmode_db
 from neutron.plugins.common import constants
 from neutron.plugins.ml2.driver_context import NetworkContext  # noqa
+from oslo_config import cfg
+from oslo_log import helpers as log_helpers
+from oslo_log import log as logging
+from oslo_utils import excutils
 
 from networking_arista._i18n import _LE, _LI
 from networking_arista.common import db_lib
@@ -44,7 +43,6 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
                             extraroute_db.ExtraRoute_db_mixin,
                             l3_gwmode_db.L3_NAT_db_mixin,
                             l3_agentschedulers_db.L3AgentSchedulerDbMixin):
-
     """Implements L3 Router service plugin for Arista hardware.
 
     Creates routers in Arista hardware, manages them, adds/deletes interfaces
@@ -247,7 +245,7 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
         routers = super(AristaL3ServicePlugin, self).get_routers(ctx)
         for r in routers:
             tenant_id = r['tenant_id']
-            ports = self.ndb.get_all_ports_for_tenant(ctxt, tenant_id)
+            ports = self.ndb.get_all_ports_for_tenant(ctx, tenant_id)
 
             try:
                 self.driver.create_router(self, tenant_id, r)
@@ -260,7 +258,7 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 if p['device_id'] == r['id']:
                     net_id = p['network_id']
                     subnet_id = p['fixed_ips'][0]['subnet_id']
-                    subnet = self.ndb.get_subnet_info(ctxt, subnet_id)
+                    subnet = self.ndb.get_subnet_info(ctx, subnet_id)
                     ml2_db = NetworkContext(self, ctx, {'id': net_id})
                     seg_id = ml2_db.network_segments[0]['segmentation_id']
 

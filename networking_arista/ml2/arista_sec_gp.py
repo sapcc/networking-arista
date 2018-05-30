@@ -18,14 +18,14 @@ import math
 import os
 import re
 import socket
-import ssl
-import threading
 
 from collections import defaultdict
+from eventlet.greenpool import GreenPool as Pool
+from eventlet.semaphore import Semaphore as Lock
 from hashlib import sha1
 from httplib import HTTPException
+import requests
 
-import jsonrpclib
 import six
 
 from netaddr import EUI
@@ -118,9 +118,77 @@ acl_cmd = {
 class AristaSwitchRPCMixin(object):
     def __init__(self, *args, **kwargs):
         super(AristaSwitchRPCMixin, self).__init__()
-        self._lock = threading.Lock()
+        self._lock = Lock()
+        self.conn_timeout = 60
         self.__server_by_id = dict()
         self.__server_by_ip = dict()
+
+    def _send_eapi_req(self, url, cmds):
+        # This method handles all EAPI requests (using the requests library)
+        # and returns either None or response.json()['result'] from the EAPI
+        # request.
+        #
+        # Exceptions related to failures in connecting/ timeouts are caught
+        # here and logged. Other unexpected exceptions are logged and raised
+
+        request_headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        }
+
+        params = {
+            'timestamps': "false",
+            'format': "json",
+            'version': 1,
+            'cmds': cmds,
+        }
+
+        data = {
+            'id': "Arista ML2 driver",
+            'method': "runCmds",
+            'jsonrpc': "2.0",
+            'params': params,
+        }
+
+        response = None
+
+        try:
+            response = requests.post(url, timeout=self.conn_timeout,
+                                     headers=request_headers,
+                                     verify=False, data=json.dumps(data))
+            try:
+                return response.json()['result']
+            except KeyError:
+                msg = "Unexpected EAPI error"
+                LOG.info(msg)
+                raise arista_exc.AristaRpcError(msg=msg)
+        except requests.exceptions.ConnectionError:
+            msg = (_('Error while trying to connect to %(url)s') %
+                   {'url': url})
+            LOG.warning(msg)
+            return None
+        except requests.exceptions.ConnectTimeout:
+            msg = (_('Timed out while trying to connect to %(url)s') %
+                   {'url': url})
+            LOG.warning(msg)
+            return None
+        except requests.exceptions.Timeout:
+            msg = (_('Timed out during an EAPI request to %(url)s') %
+                   {'url': url})
+            LOG.warning(msg)
+            return None
+        except requests.exceptions.InvalidURL:
+            msg = (_('Ignore attempt to connect to invalid URL %(url)s') %
+                   {'url': url})
+            LOG.warning(msg)
+            return None
+        except ValueError:
+            LOG.info("Ignoring invalid JSON response")
+            return None
+        except Exception as error:
+            msg = six.text_type(error)
+            LOG.warning(msg)
+            raise
 
     def _validate_config(self, reason=''):
         if len(cfg.CONF.ml2_arista.get('switch_info')) < 1:
@@ -130,32 +198,39 @@ class AristaSwitchRPCMixin(object):
             raise arista_exc.AristaConfigError(msg=msg)
 
     def _maintain_connections(self):
-        with self._lock:
-            for s in cfg.CONF.ml2_arista.switch_info:
-                switch_ip, switch_user, switch_pass = s.split(":")
-                if switch_ip in self.__server_by_ip:
-                    continue
+        switches = []
 
-                if switch_pass == "''":
-                    switch_pass = ''
-                eapi_server_url = ('https://%s:%s@%s/command-api' %
-                                   (switch_user, switch_pass, switch_ip))
-                transport = jsonrpclib.jsonrpc.SafeTransport()
-                # TODO(fabianw): Make that a configuration value
-                if hasattr(ssl, '_create_unverified_context'):
-                    transport.context = ssl._create_unverified_context()
-                server = jsonrpclib.Server(eapi_server_url,
-                                           transport=transport)
-                try:
-                    ret = server.runCmds(
-                        version=1,
-                        cmds=['show lldp local-info management 1'])[0]
-                    system_id = EUI(ret['chassisId'])
-                    self.__server_by_id[system_id] = server
-                    self.__server_by_ip[switch_ip] = server
-                except (socket.error, HTTPException) as e:
-                    LOG.warn("Could not connect to server %s due to %s",
-                             switch_ip, e)
+        for s in cfg.CONF.ml2_arista.switch_info:
+            switch_ip, switch_user, switch_pass = s.split(":")
+            if switch_ip not in self.__server_by_ip:
+                switches.append((switch_ip, switch_user, switch_pass))
+
+        if not switches:
+            return
+
+        with self._lock:
+            pool = Pool()
+            for s in pool.starmap(self._connect_to_switch, switches):
+                pass
+
+    def _connect_to_switch(self, switch_ip, switch_user, switch_pass):
+        if switch_ip in self.__server_by_ip:
+            return
+
+        if switch_pass == "''":
+            switch_pass = ''
+        eapi_server_url = ('https://%s:%s@%s/command-api' %
+                           (switch_user, switch_pass, switch_ip))
+        try:
+            def server(cmds):
+                return self._send_eapi_req(eapi_server_url, cmds)
+            ret = server(['show lldp local-info management 1'])[0]
+            system_id = EUI(ret['chassisId'])
+            self.__server_by_id[system_id] = server
+            self.__server_by_ip[switch_ip] = server
+        except (socket.error, HTTPException) as e:
+            LOG.warn("Could not connect to server %s due to %s",
+                     switch_ip, e)
 
     @property
     def _server_by_id(self):
@@ -884,9 +959,10 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         LOG.debug('Executing command on Arista EOS: %s', full_command)
 
         try:
-            # this returns array of return values for every command in
+            # this returns array ofplug_port_into_network
+            # return values for every command in
             # full_command list
-            ret = server.runCmds(version=1, cmds=full_command)
+            ret = server(full_command)
             LOG.debug('Results of execution on Arista EOS: %s', ret)
         except Exception as e:
             msg = (_('Error occurred while trying to execute '
@@ -960,10 +1036,9 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             active_acls_per_port = defaultdict(lambda: [None, None])
             active_acls[server_id] = active_acls_per_port
             try:
-                acls, summary = server.runCmds(
-                    version=1,
-                    cmds=['show ip access-lists',
-                          'show ip access-lists summary'])
+                acls, summary = server(
+                    ['show ip access-lists',
+                     'show ip access-lists summary'])
                 existing_acls[server_id] = {
                     acl['name']: acl['sequence']
                     for acl in acls['aclList']
@@ -1019,9 +1094,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             if server is None:
                 continue
             try:
-                ret = server.runCmds(
-                    version=1,
-                    cmds=["show interfaces " +
+                ret = server(["show interfaces " +
                           ",".join(port_security_groups.iterkeys())])[0]
                 for k, v in six.iteritems(ret['interfaces']):
                     pc = None

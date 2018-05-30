@@ -2303,9 +2303,7 @@ class AristaNoCvxWrapperBase(AristaRPCWrapperBase,
             port_id = binding['port_id']
             vlan_id = segments[-1]['segmentation_id']
 
-            result = server.runCmds(
-                version=1,
-                cmds=["show interfaces " + port_id])[0]
+            result = server(["show interfaces " + port_id])[0]
 
             interfaces = [port_id]
             for k, v in six.iteritems(result['interfaces']):
@@ -2333,7 +2331,7 @@ class AristaNoCvxWrapperBase(AristaRPCWrapperBase,
                 ])
             cmds.append('exit')
 
-            result = server.runCmds(version=1, cmds=cmds)
+            result = server(cmds)
 
     def unplug_port_from_network(self, device_id, device_owner, hostname,
                                  neutron_port_id, network_id, tenant_id, sg,
@@ -2357,9 +2355,7 @@ class AristaNoCvxWrapperBase(AristaRPCWrapperBase,
             port_id = binding['port_id']
             vlan_id = segments[-1]['segmentation_id']
 
-            result = server.runCmds(
-                version=1,
-                cmds=["show interfaces " + port_id])[0]
+            result = server(["show interfaces " + port_id])[0]
 
             interfaces = [port_id]
             for k, v in six.iteritems(result['interfaces']):
@@ -2380,7 +2376,7 @@ class AristaNoCvxWrapperBase(AristaRPCWrapperBase,
                 ])
             cmds.append('exit')
 
-            result = server.runCmds(version=1, cmds=cmds)
+            result = server(cmds)
 
     @staticmethod
     def _can_handle_port(segments, switch_bindings, vnic_type):

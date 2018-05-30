@@ -18,7 +18,6 @@ import math
 import os
 
 import mock
-from mock import patch
 from netaddr import EUI
 from neutron.context import get_admin_context
 from neutron.tests.unit import testlib_api
@@ -34,34 +33,30 @@ def setup_config():
     cfg.CONF.set_override('lossy_consolidation_limit', 100, "ml2_arista")
 
 
-class FakeServerProxy(object):
-    def __init__(self, uri, transport=None):
-        self.uri = uri
-
-    def runCmds(self, cmds, version=0):
-        ret = []
-        for cmd in cmds:
-            if 'show lldp local-info management 1' == cmd:
-                if "switch2" in self.uri:
-                    ret.append({'chassisId': '02-34-56-78-90-12'})
-                else:
-                    ret.append({'chassisId': '01-23-45-67-89-01'})
-            elif 'show ip access-lists' == cmd:
-                cur_dir = os.path.dirname(os.path.realpath(__file__))
-                ret.append(json.load(open(cur_dir + '/jsonrpc.json')))
-
-                # add make some diff between routers
-                if "switch2" in self.uri:
-                    ret[len(ret) - 1]['aclList'][0]['sequence'] = []
-            elif 'show ip access-lists summary' == cmd:
-                ret.append({"aclList": [
-                    {"name": "SG-IN-test_security_group",
-                     "configuredEgressIntfs": [],
-                     "configuredIngressIntfs": []}
-                ]})
+def fake_send_eapi_req(url, cmds):
+    ret = []
+    for cmd in cmds:
+        if 'show lldp local-info management 1' == cmd:
+            if "switch2" in url:
+                ret.append({'chassisId': '02-34-56-78-90-12'})
             else:
-                ret.append(None)
-        return ret
+                ret.append({'chassisId': '01-23-45-67-89-01'})
+        elif 'show ip access-lists' == cmd:
+            cur_dir = os.path.dirname(os.path.realpath(__file__))
+            ret.append(json.load(open(cur_dir + '/jsonrpc.json')))
+
+            # add make some diff between routers
+            if "switch2" in url:
+                ret[len(ret) - 1]['aclList'][0]['sequence'] = []
+        elif 'show ip access-lists summary' == cmd:
+            ret.append({"aclList": [
+                {"name": "SG-IN-test_security_group",
+                 "configuredEgressIntfs": [],
+                 "configuredIngressIntfs": []}
+            ]})
+        else:
+            ret.append(None)
+    return ret
 
 
 class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
@@ -71,12 +66,8 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         setup_config()
         self.fake_rpc = mock.MagicMock()
 
-        # Mock for maintain_connections
-        patcher = patch('jsonrpclib.Server', new=FakeServerProxy)
-        self.mock_rpc = patcher.start()
-        self.addCleanup(patcher.stop)
-
         self.drv = arista_sec_gp.AristaSecGroupSwitchDriver(self.fake_rpc)
+        self.drv._send_eapi_req = fake_send_eapi_req
         self.mock_sg_cmds = mock.MagicMock()
         self.drv._run_openstack_sg_cmds = self.mock_sg_cmds
 

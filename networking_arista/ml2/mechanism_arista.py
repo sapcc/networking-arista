@@ -13,6 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+if not os.environ.get('DISABLE_EVENTLET_PATCHING'):
+    import eventlet
+
+    eventlet.monkey_patch()
+
 from neutron.common import config as common_config
 from neutron.common import constants as n_const
 from neutron.context import get_admin_context
@@ -1172,7 +1178,7 @@ def cli():
                           port_name, device_owner, sg, orig_sg, vnic_type,
                           segments, bindings, vlan_type))
 
-    from multiprocessing.dummy import Pool
+    from eventlet.greenpool import GreenPool as Pool
 
     def plug((device_id, hostname, port_id, network_id, tenant_id,
              port_name, device_owner, sg, orig_sg, vnic_type,
@@ -1191,6 +1197,5 @@ def cli():
                                    switch_bindings=bindings,
                                    vlan_type=vlan_type)
     p = Pool(8)
-    p.imap_unordered(plug, items)
-    p.close()
-    p.join()
+    for item in p.imap(plug, items):
+        pass

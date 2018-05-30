@@ -2344,8 +2344,6 @@ class AristaNoCvxWrapperBase(AristaRPCWrapperBase,
         if not self._can_handle_port(segments, switch_bindings, vnic_type):
             return
 
-        self._maintain_connections()
-
         for binding in switch_bindings:
             if not binding:
                 continue

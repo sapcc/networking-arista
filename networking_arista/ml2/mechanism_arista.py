@@ -1130,6 +1130,7 @@ def cli():
     PortBindingLevel.segment = relationship(NetworkSegment,
                                             lazy='subquery')
 
+    items = []
     with context.session.begin():
         session = context.session
         ports = session.query(Port). \
@@ -1143,7 +1144,6 @@ def cli():
             ports.filter(Port.id.in_(config.CONF.port_id))
 
         for port in ports:
-            print(port.id)
             port_id = port.id
             device_id = port.device_id
             network_id = port.network_id
@@ -1167,15 +1167,30 @@ def cli():
                         for level in port.port_binding_levels
                         if level.driver == 'arista'
                         ]
-            rpc.plug_port_into_network(device_id,
-                                       hostname,
-                                       port_id,
-                                       network_id,
-                                       tenant_id,
-                                       port_name,
-                                       device_owner,
-                                       sg, orig_sg,
-                                       vnic_type,
-                                       segments=segments,
-                                       switch_bindings=bindings,
-                                       vlan_type=vlan_type)
+
+            items.append((device_id, hostname, port_id, network_id, tenant_id,
+                          port_name, device_owner, sg, orig_sg, vnic_type,
+                          segments, bindings, vlan_type))
+
+    from multiprocessing.dummy import Pool
+
+    def plug((device_id, hostname, port_id, network_id, tenant_id,
+             port_name, device_owner, sg, orig_sg, vnic_type,
+             segments, bindings, vlan_type)):
+        print(port_id)
+        rpc.plug_port_into_network(device_id,
+                                   hostname,
+                                   port_id,
+                                   network_id,
+                                   tenant_id,
+                                   port_name,
+                                   device_owner,
+                                   sg, orig_sg,
+                                   vnic_type,
+                                   segments=segments,
+                                   switch_bindings=bindings,
+                                   vlan_type=vlan_type)
+    p = Pool(8)
+    p.imap_unordered(plug, items)
+    p.close()
+    p.join()

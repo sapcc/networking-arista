@@ -19,6 +19,7 @@ import os
 import re
 import socket
 import ssl
+import threading
 
 from collections import defaultdict
 from hashlib import sha1
@@ -117,8 +118,9 @@ acl_cmd = {
 class AristaSwitchRPCMixin(object):
     def __init__(self, *args, **kwargs):
         super(AristaSwitchRPCMixin, self).__init__()
-        self._server_by_id = dict()
-        self._server_by_ip = dict()
+        self._lock = threading.Lock()
+        self.__server_by_id = dict()
+        self.__server_by_ip = dict()
 
     def _validate_config(self, reason=''):
         if len(cfg.CONF.ml2_arista.get('switch_info')) < 1:
@@ -128,34 +130,47 @@ class AristaSwitchRPCMixin(object):
             raise arista_exc.AristaConfigError(msg=msg)
 
     def _maintain_connections(self):
-        for s in cfg.CONF.ml2_arista.switch_info:
-            switch_ip, switch_user, switch_pass = s.split(":")
-            if switch_ip in self._server_by_ip:
-                continue
+        with self._lock:
+            for s in cfg.CONF.ml2_arista.switch_info:
+                switch_ip, switch_user, switch_pass = s.split(":")
+                if switch_ip in self.__server_by_ip:
+                    continue
 
-            if switch_pass == "''":
-                switch_pass = ''
-            eapi_server_url = ('https://%s:%s@%s/command-api' %
-                               (switch_user, switch_pass, switch_ip))
-            transport = jsonrpclib.jsonrpc.SafeTransport()
-            # TODO(fabianw): Make that a configuration value
-            if hasattr(ssl, '_create_unverified_context'):
-                transport.context = ssl._create_unverified_context()
-            server = jsonrpclib.Server(eapi_server_url, transport=transport)
-            try:
-                ret = server.runCmds(version=1,
-                                     cmds=['show lldp local-info management 1']
-                                     )[0]
-                system_id = EUI(ret['chassisId'])
-                self._server_by_id[system_id] = server
-                self._server_by_ip[switch_ip] = server
-            except (socket.error, HTTPException) as e:
-                LOG.warn("Could not connect to server %s due to %s", switch_ip,
-                         e)
+                if switch_pass == "''":
+                    switch_pass = ''
+                eapi_server_url = ('https://%s:%s@%s/command-api' %
+                                   (switch_user, switch_pass, switch_ip))
+                transport = jsonrpclib.jsonrpc.SafeTransport()
+                # TODO(fabianw): Make that a configuration value
+                if hasattr(ssl, '_create_unverified_context'):
+                    transport.context = ssl._create_unverified_context()
+                server = jsonrpclib.Server(eapi_server_url, transport=transport)
+                try:
+                    ret = server.runCmds(version=1,
+                                         cmds=['show lldp local-info management 1']
+                                         )[0]
+                    system_id = EUI(ret['chassisId'])
+                    self.__server_by_id[system_id] = server
+                    self.__server_by_ip[switch_ip] = server
+                except (socket.error, HTTPException) as e:
+                    LOG.warn("Could not connect to server %s due to %s", switch_ip,
+                             e)
+
+    @property
+    def _server_by_id(self):
+        self._maintain_connections()
+        return self.__server_by_id
+
+    @property
+    def _server_by_ip(self):
+        self._maintain_connections()
+        return self.__server_by_ip
 
     def _get_server(self, switch_info=None, switch_id=None):
-        return self._server_by_ip.get(switch_info) \
-               or self._server_by_id.get(EUI(switch_id))
+        self._maintain_connections()
+
+        return self.__server_by_ip.get(switch_info) \
+               or self.__server_by_id.get(EUI(switch_id))
 
 
 class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
@@ -699,8 +714,6 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         if not self.sg_enabled or not sg:
             return
 
-        self._maintain_connections()
-
         security_group_id = sg['id']
         security_group_rules = list(sg['security_group_rules'])
 
@@ -920,8 +933,6 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
         if not self.sg_enabled:
             return
-
-        self._maintain_connections()
 
         arista_ports = db_lib.get_ports(context)
         arista_port_ids = set(arista_ports.iterkeys())

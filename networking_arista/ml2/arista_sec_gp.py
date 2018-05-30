@@ -144,17 +144,18 @@ class AristaSwitchRPCMixin(object):
                 # TODO(fabianw): Make that a configuration value
                 if hasattr(ssl, '_create_unverified_context'):
                     transport.context = ssl._create_unverified_context()
-                server = jsonrpclib.Server(eapi_server_url, transport=transport)
+                server = jsonrpclib.Server(eapi_server_url,
+                                           transport=transport)
                 try:
-                    ret = server.runCmds(version=1,
-                                         cmds=['show lldp local-info management 1']
-                                         )[0]
+                    ret = server.runCmds(
+                        version=1,
+                        cmds=['show lldp local-info management 1'])[0]
                     system_id = EUI(ret['chassisId'])
                     self.__server_by_id[system_id] = server
                     self.__server_by_ip[switch_ip] = server
                 except (socket.error, HTTPException) as e:
-                    LOG.warn("Could not connect to server %s due to %s", switch_ip,
-                             e)
+                    LOG.warn("Could not connect to server %s due to %s",
+                             switch_ip, e)
 
     @property
     def _server_by_id(self):
@@ -169,8 +170,8 @@ class AristaSwitchRPCMixin(object):
     def _get_server(self, switch_info=None, switch_id=None):
         self._maintain_connections()
 
-        return self.__server_by_ip.get(switch_info) \
-               or self.__server_by_id.get(EUI(switch_id))
+        return (self.__server_by_ip.get(switch_info)
+                or self.__server_by_id.get(EUI(switch_id)))
 
 
 class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):

@@ -120,6 +120,10 @@ class AristaSwitchRPCMixin(object):
         super(AristaSwitchRPCMixin, self).__init__()
         self._lock = Lock()
         self.conn_timeout = 60
+        self._session = requests.session()
+        self._session.headers['Content-Type'] = 'application/json'
+        self._session.headers['Accept'] = 'application/json'
+        self._session.verify = False
         self.__server_by_id = dict()
         self.__server_by_ip = dict()
 
@@ -131,31 +135,25 @@ class AristaSwitchRPCMixin(object):
         # Exceptions related to failures in connecting/ timeouts are caught
         # here and logged. Other unexpected exceptions are logged and raised
 
-        request_headers = {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-        }
-
         params = {
-            'timestamps': "false",
-            'format': "json",
+            'timestamps': 'false',
+            'format': 'json',
             'version': 1,
             'cmds': cmds,
         }
 
         data = {
-            'id': "Arista ML2 driver",
-            'method': "runCmds",
-            'jsonrpc': "2.0",
+            'id': 'Arista ML2 driver',
+            'method': 'runCmds',
+            'jsonrpc': '2.0',
             'params': params,
         }
 
-        response = None
-
         try:
-            response = requests.post(url, timeout=self.conn_timeout,
-                                     headers=request_headers,
-                                     verify=False, data=json.dumps(data))
+            response = self._session.post(
+                url,
+                timeout=self.conn_timeout,
+                json=data)
             try:
                 return response.json()['result']
             except KeyError:

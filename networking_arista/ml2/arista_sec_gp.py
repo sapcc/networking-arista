@@ -119,13 +119,32 @@ class AristaSwitchRPCMixin(object):
     def __init__(self, *args, **kwargs):
         super(AristaSwitchRPCMixin, self).__init__()
         self._lock = Lock()
-        self.conn_timeout = 60
-        self._session = requests.session()
-        self._session.headers['Content-Type'] = 'application/json'
-        self._session.headers['Accept'] = 'application/json'
-        self._session.verify = False
+        self.conn_timeout = (5, 60)
+        self._session = self._make_session()
         self.__server_by_id = dict()
         self.__server_by_ip = dict()
+
+    @staticmethod
+    def _make_session(max_pools=10, max_connections=1,
+                      pool_block=True, max_retries=2):
+        s = requests.session()
+        s.headers['Content-Type'] = 'application/json'
+        s.headers['Accept'] = 'application/json'
+        s.verify = False
+        s.mount('https://', requests.adapters.HTTPAdapter(
+            max_retries=max_retries,
+            pool_connections=max_pools,
+            pool_maxsize=max_connections,
+            pool_block=pool_block,
+        ))
+        s.mount('http://', requests.adapters.HTTPAdapter(
+            max_retries=max_retries,
+            pool_connections=max_pools,
+            pool_maxsize=max_connections,
+            pool_block=pool_block,
+        ))
+
+        return s
 
     def _send_eapi_req(self, url, cmds):
         # This method handles all EAPI requests (using the requests library)

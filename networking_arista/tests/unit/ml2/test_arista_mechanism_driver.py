@@ -33,6 +33,9 @@ from networking_arista.common import db_lib
 from networking_arista.common import exceptions as arista_exc
 from networking_arista.ml2 import arista_ml2
 from networking_arista.ml2 import mechanism_arista
+from networking_arista.ml2.rpc.arista_eapi import AristaRPCWrapperEapi
+from networking_arista.ml2.rpc.arista_eapi import CMD_INSTANCE
+from networking_arista.ml2.rpc.arista_json import AristaRPCWrapperJSON
 
 
 def setup_arista_wrapper_config(value=''):
@@ -264,10 +267,10 @@ class AristaProvisionedVlansStorageTestCase(testlib_api.SqlTestCase):
             '%s != %s' % (net_list, expected_eos_net_list)))
 
 
-BASE_RPC = "networking_arista.ml2.arista_ml2.AristaRPCWrapperJSON."
+BASE_RPC = "networking_arista.ml2.rpc.arista_json.AristaRPCWrapperJSON."
 JSON_SEND_FUNC = BASE_RPC + "_send_api_request"
 RAND_FUNC = BASE_RPC + "_get_random_name"
-EAPI_SEND_FUNC = ('networking_arista.ml2.arista_ml2.AristaRPCWrapperEapi'
+EAPI_SEND_FUNC = ('networking_arista.ml2.rpc.arista_eapi.AristaRPCWrapperEapi'
                   '._send_eapi_req')
 
 
@@ -290,7 +293,7 @@ class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
         mock_arista = mock_json_server.return_value
         mock_arista.runCmds.return_value = [{'chassisId': '01-23-45-67-89-01'}]
 
-        self.drv = arista_ml2.AristaRPCWrapperJSON(ndb)
+        self.drv = AristaRPCWrapperJSON(ndb)
         self.drv._server_ip = "10.11.12.13"
         self.region = 'RegionOne'
         self.admin_ctx = get_admin_context()
@@ -773,7 +776,7 @@ class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
         self._verify_send_api_request_call(mock_send_api_req, calls)
 
     @patch(JSON_SEND_FUNC)
-    @patch('networking_arista.ml2.arista_ml2.AristaRPCWrapperJSON.'
+    @patch('networking_arista.ml2.rpc.arista_json.AristaRPCWrapperJSON.'
            'get_instance_ports')
     def test_unplug_virtual_port_from_network(self, mock_get_instance_ports,
                                               mock_send_api_req):
@@ -826,7 +829,7 @@ class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
         self._verify_send_api_request_call(mock_send_api_req, calls)
 
     @patch(JSON_SEND_FUNC)
-    @patch('networking_arista.ml2.arista_ml2.AristaRPCWrapperJSON.'
+    @patch('networking_arista.ml2.rpc.arista_json.AristaRPCWrapperJSON.'
            'get_instance_ports')
     def test_unplug_baremetal_port_from_network(self, mock_get_instance_ports,
                                                 mock_send_api_req):
@@ -868,7 +871,7 @@ class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
         self._verify_send_api_request_call(mock_send_api_req, calls)
 
     @patch(JSON_SEND_FUNC)
-    @patch('networking_arista.ml2.arista_ml2.AristaRPCWrapperJSON.'
+    @patch('networking_arista.ml2.rpc.arista_json.AristaRPCWrapperJSON.'
            'get_instance_ports')
     def test_unplug_dhcp_port_from_network(self, mock_get_instance_ports,
                                            mock_send_api_req):
@@ -907,7 +910,7 @@ class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
         self._verify_send_api_request_call(mock_send_api_req, calls)
 
     @patch(JSON_SEND_FUNC)
-    @patch('networking_arista.ml2.arista_ml2.AristaRPCWrapperJSON.'
+    @patch('networking_arista.ml2.rpc.arista_json.AristaRPCWrapperJSON.'
            'get_instance_ports')
     def test_unplug_router_port_from_network(self, mock_get_instance_ports,
                                              mock_send_api_req):
@@ -940,7 +943,7 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
         ndb = db_lib.NeutronNets()
         mock_arista = mock_json_server.return_value
         mock_arista.runCmds.return_value = [{'chassisId': '01-23-45-67-89-01'}]
-        self.drv = arista_ml2.AristaRPCWrapperEapi(ndb)
+        self.drv = AristaRPCWrapperEapi(ndb)
         self.drv._server_ip = "10.11.12.13"
         self.region = 'RegionOne'
 
@@ -1250,7 +1253,7 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
             create_ports.update(port_dict_representation(port))
             port_profiles[port['portId']] = {'vnic_type': 'normal'}
         context = get_admin_context()
-        self.drv.cli_commands[arista_ml2.CMD_INSTANCE] = 'instance'
+        self.drv.cli_commands[CMD_INSTANCE] = 'instance'
         self.drv.create_instance_bulk(context,
                                       tenant_id, create_ports, devices,
                                       port_profiles=port_profiles)
@@ -1370,9 +1373,6 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
             commands_to_log=[cmd1, cmd2])
 
     def _enable_sync_cmds(self):
-        self.drv.cli_commands[
-            arista_ml2.CMD_REGION_SYNC] = 'region RegionOne sync'
-        self.drv.cli_commands[arista_ml2.CMD_SYNC_HEARTBEAT] = 'sync heartbeat'
         self.drv.cli_commands['baremetal'] = ''
 
     @patch(EAPI_SEND_FUNC)
@@ -1534,7 +1534,7 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
             create_ports.update(port_dict_representation(port))
             port_profiles[port['portId']] = {'vnic_type': 'normal'}
 
-        self.drv.cli_commands[arista_ml2.CMD_INSTANCE] = 'instance'
+        self.drv.cli_commands[CMD_INSTANCE] = 'instance'
         context = get_admin_context()
         self.drv.create_instance_bulk(context, tenant_id, create_ports,
                                       devices,
@@ -1612,7 +1612,7 @@ class AristaRPCWrapperInvalidConfigTestCase(base.BaseTestCase):
     def test_raises_exception_on_wrong_configuration(self):
         ndb = db_lib.NeutronNets()
         self.assertRaises(arista_exc.AristaConfigError,
-                          arista_ml2.AristaRPCWrapperEapi, ndb)
+                          AristaRPCWrapperEapi, ndb)
 
 
 class NegativeRPCWrapperTestCase(testlib_api.SqlTestCase):
@@ -1629,7 +1629,7 @@ class NegativeRPCWrapperTestCase(testlib_api.SqlTestCase):
         mock_arista.runCmds.return_value = [{'chassisId': '01-23-45-67-89-01'}]
 
         ndb = db_lib.NeutronNets()
-        drv = arista_ml2.AristaRPCWrapperEapi(ndb)
+        drv = AristaRPCWrapperEapi(ndb)
 
         drv._server = mock.MagicMock()
         drv._server.runCmds.side_effect = Exception('server error')

@@ -69,7 +69,7 @@ ARISTA_DRIVER_OPTS = [
                       'OpenStack/Neutron controllers are managing the same '
                       'Arista HW clusters. Note that this name must match '
                       'with the region name registered (or known) to keystone '
-                      'service. Authentication with Keysotne is performed by '
+                      'service. Authentication with Keystone is performed by '
                       'EOS. This is optional. If not set, a value of '
                       '"RegionOne" is assumed.')),
     cfg.BoolOpt('sec_group_support',
@@ -81,8 +81,8 @@ ARISTA_DRIVER_OPTS = [
                        'to be False')),
     cfg.ListOpt('switch_info',
                 default=[],
-                help=_('This is a comma separated list of Arista Switches '
-                       'where the Security groups (i.e. ACLs) need to be '
+                help=_('This is a comma separated list of Arista switches '
+                       'where security groups (i.e. ACLs) need to be '
                        'applied. Each string has three values separated  '
                        'by : in the follow format '
                        '<IP of switch>:<username>:<password>, ...... '
@@ -99,12 +99,18 @@ ARISTA_DRIVER_OPTS = [
     cfg.ListOpt('managed_physnets',
                 default=[],
                 help=_('This is a comma separated list of physical networks '
-                       'which are managed by Arista Switches.'
-                       'This list will be used in bind_port/update_port by '
-                       'Arista mechanism driver to make decision if it can '
-                       'participate on binding or updating a port.'
+                       'which are managed by Arista switches.'
+                       'This list will be used by the Arista ML2 plugin'
+                       'to make the decision if it can participate in binding'
+                       'or updating a port.'
                        'For Example: '
                        'managed_physnets = arista_network')),
+    cfg.BoolOpt('manage_fabric',
+                default=False,
+                help=_('Specifies whether the Arista ML2 plugin should bind '
+                       'ports to vxlan fabric segments and dynamically '
+                       'allocate vlan segments based on the host to connect '
+                       'the port to the vxlan fabric')),
     cfg.IntOpt('lossy_consolidation_limit',
                default=0,
                help=_('Sets a limit per Arista Switch for ACL rule count '
@@ -112,7 +118,6 @@ ARISTA_DRIVER_OPTS = [
                       'that tries to merge ACL Rules into shared subnets in '
                       'order to minimize total rule count even it it punches '
                       'holes into the original ruleset. 0 to disable.')),
-
 ]
 
 """ Arista L3 Service Plugin specific configuration knobs.
@@ -146,6 +151,12 @@ ARISTA_L3_PLUGIN = [
                       'mlag_config flag is set, then this is required. '
                       'If not set, all communications to Arista EOS '
                       'will fail')),
+    cfg.IntOpt('conn_timeout',
+               default=10,
+               help=_('Connection timeout interval in seconds. This interval '
+                      'defines how long an EAPI request from the driver to '
+                      'EOS waits before timing out. If not set, a value of 10 '
+                      'seconds is assumed.')),
     cfg.BoolOpt('mlag_config',
                 default=False,
                 help=_('This flag is used indicate if Arista Switches are '

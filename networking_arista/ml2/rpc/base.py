@@ -269,13 +269,6 @@ class AristaRPCWrapperBase(object):
         self.security_group_driver.perform_sync_of_sg(context)
 
     @abc.abstractmethod
-    def bm_and_dvr_supported(self):
-        """Whether EOS supports Ironic and DVR.
-
-        Returns True if supported, false otherwise.
-        """
-
-    @abc.abstractmethod
     def register_with_eos(self, sync=False):
         """This is the registration request with EOS.
 
@@ -283,14 +276,6 @@ class AristaRPCWrapperBase(object):
         critical end-point information is registered with EOS.
 
         :param sync: This flags indicates that the region is being synced.
-        """
-
-    @abc.abstractmethod
-    def check_supported_features(self):
-        """Checks whether the CLI commands are valid.
-
-           This method tries to execute the commands on EOS and if it succeedes
-           the command is stored.
         """
 
     @abc.abstractmethod
@@ -402,13 +387,6 @@ class AristaRPCWrapperBase(object):
         :param tenant_id : globally unique neutron tenant identifier
         :param vm_id_list : ids of VMs that needs to be deleted.
         :param sync: This flags indicates that the region is being synced.
-        """
-
-    @abc.abstractmethod
-    def hpb_supported(self):
-        """Whether hierarchical port binding (HPB) is supported by CVX.
-
-        Returns True if HPB is supported, False otherwise.
         """
 
     def apply_security_group(self, security_group, switch_bindings):

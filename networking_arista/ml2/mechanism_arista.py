@@ -69,6 +69,7 @@ class AristaDriver(driver_api.MechanismDriver):
         self.segmentation_type = db_lib.VLAN_SEGMENTATION
         self.timer = None
         self.managed_physnets = confg['managed_physnets']
+        self.manage_fabric = confg['manage_fabric']
 
         self.eapi = None
 
@@ -99,7 +100,6 @@ class AristaDriver(driver_api.MechanismDriver):
     def initialize(self):
         if self.rpc.check_cvx_availability():
             self.rpc.register_with_eos()
-            self.rpc.check_supported_features()
 
         context = get_admin_context()
         self._cleanup_db(context)
@@ -118,12 +118,6 @@ class AristaDriver(driver_api.MechanismDriver):
 
         network = context.current
         segments = context.network_segments
-
-        if not self.rpc.hpb_supported():
-            # Hierarchical port binding is not supported by CVX, only
-            # allow VLAN network type.
-            if segments[0][driver_api.NETWORK_TYPE] != p_const.TYPE_VLAN:
-                return
 
         network_id = network['id']
         tenant_id = network['tenant_id'] or constants.INTERNAL_TENANT_ID
@@ -232,12 +226,7 @@ class AristaDriver(driver_api.MechanismDriver):
         """Send network delete request to Arista HW."""
         network = context.current
         segments = context.network_segments
-        if not self.rpc.hpb_supported():
-            # Hierarchical port binding is not supported by CVX, only
-            # send the request if network type is VLAN.
-            if segments[0][driver_api.NETWORK_TYPE] != p_const.TYPE_VLAN:
-                # If network type is not VLAN, do nothing
-                return
+
         network_id = network['id']
         tenant_id = network['tenant_id'] or constants.INTERNAL_TENANT_ID
 
@@ -344,11 +333,6 @@ class AristaDriver(driver_api.MechanismDriver):
                 continue
 
             if segment[driver_api.NETWORK_TYPE] == p_const.TYPE_VXLAN:
-                # Check if CVX supports HPB
-                if not self.rpc.hpb_supported():
-                    LOG.debug("bind_port: HPB is not supported")
-                    return
-
                 # The physical network is connected to arista switches,
                 # allocate dynamic segmentation id to bind the port to
                 # the network that the port belongs to.
@@ -678,22 +662,16 @@ class AristaDriver(driver_api.MechanismDriver):
                 break
         segments = []
         if net_provisioned:
-            if self.rpc.hpb_supported():
-                segments = seg_info
-                all_segments = self.ndb.get_all_network_segments(
-                    plugin_context, network_id)
-                try:
-                    self.rpc.create_network_segments(
-                        tenant_id, network_id,
-                        context.network.current['name'], all_segments)
-                except arista_exc.AristaRpcError:
-                    LOG.error(_LE("Failed to create network segments"))
-                    raise ml2_exc.MechanismDriverError()
-            else:
-                # For non HPB cases, the port is bound to the static
-                # segment
-                segments = self.ndb.get_network_segments(plugin_context,
-                                                         network_id)
+            segments = seg_info
+            all_segments = self.ndb.get_all_network_segments(
+                plugin_context, network_id)
+            try:
+                self.rpc.create_network_segments(
+                    tenant_id, network_id,
+                    context.network.current['name'], all_segments)
+            except arista_exc.AristaRpcError:
+                LOG.error(_LE("Failed to create network segments"))
+                raise ml2_exc.MechanismDriverError()
 
         try:
             orig_host = context.original_host
@@ -840,10 +818,6 @@ class AristaDriver(driver_api.MechanismDriver):
         param context: The port context
         param tenant_id: The tenant which the port belongs to
         """
-
-        if not self.rpc.hpb_supported():
-            # Returning as HPB not supported by CVX
-            return
 
         port = context.current
         network_id = port.get('network_id')
@@ -1136,9 +1110,10 @@ def cli():
 
     from eventlet.greenpool import GreenPool as Pool
 
-    def plug((device_id, hostname, port_id, network_id, tenant_id,
-             port_name, device_owner, sg, orig_sg, vnic_type,
-             segments, bindings, vlan_type)):
+    def plug(args):
+        device_id, hostname, port_id, network_id, tenant_id,\
+            port_name, device_owner, sg, orig_sg, vnic_type,\
+            segments, bindings, vlan_type = args
         print(port_id)
         rpc.plug_port_into_network(device_id,
                                    hostname,

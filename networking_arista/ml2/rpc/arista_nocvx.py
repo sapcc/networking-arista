@@ -156,16 +156,7 @@ class AristaNoCvxWrapperBase(AristaRPCWrapperBase,
             return False
         return True
 
-    def bm_and_dvr_supported(self):
-        return True
-
-    def hpb_supported(self):
-        return True
-
     def register_with_eos(self, sync=False):
-        return True
-
-    def check_supported_features(self):
         return True
 
     def get_region_updated_time(self):

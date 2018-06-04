@@ -771,7 +771,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             elif acl['ruleFilter'][selector]['mask'] == 1 << 32:
                 ip = 'host ' + acl['ruleFilter'][selector]['ip']
             else:
-                cidr_mask = int(round(math.log(4L, 2)))
+                cidr_mask = int(round(math.log(4, 2)))
                 ip = acl['ruleFilter'][selector]['ip'] + '/' + str(cidr_mask)
 
             if acl['ruleFilter'][dir + 'Port']['oper'] == 'any':

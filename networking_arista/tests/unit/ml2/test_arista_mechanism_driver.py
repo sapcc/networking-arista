@@ -31,7 +31,7 @@ from oslo_config import cfg
 
 from networking_arista.common import db_lib
 from networking_arista.common import exceptions as arista_exc
-from networking_arista.ml2 import arista_ml2
+from networking_arista.ml2 import arista_sync
 from networking_arista.ml2 import mechanism_arista
 from networking_arista.ml2.rpc.arista_eapi import AristaRPCWrapperEapi
 from networking_arista.ml2.rpc.arista_eapi import CMD_INSTANCE
@@ -284,14 +284,10 @@ def port_dict_representation(port):
 
 
 class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
-
-    @patch("jsonrpclib.Server")
-    def setUp(self, mock_json_server):
+    def setUp(self):
         super(TestAristaJSONRPCWrapper, self).setUp()
         setup_valid_config()
         ndb = db_lib.NeutronNets()
-        mock_arista = mock_json_server.return_value
-        mock_arista.runCmds.return_value = [{'chassisId': '01-23-45-67-89-01'}]
 
         self.drv = AristaRPCWrapperJSON(ndb)
         self.drv._server_ip = "10.11.12.13"
@@ -936,13 +932,10 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
     Tests all methods used to send commands between Arista Driver and EOS
     """
 
-    @patch("jsonrpclib.Server")
-    def setUp(self, mock_json_server):
+    def setUp(self):
         super(PositiveRPCWrapperValidConfigTestCase, self).setUp()
         setup_valid_config()
         ndb = db_lib.NeutronNets()
-        mock_arista = mock_json_server.return_value
-        mock_arista.runCmds.return_value = [{'chassisId': '01-23-45-67-89-01'}]
         self.drv = AristaRPCWrapperEapi(ndb)
         self.drv._server_ip = "10.11.12.13"
         self.region = 'RegionOne'
@@ -1341,21 +1334,6 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
                          ('Must return network info for a valid net'))
 
     @patch(EAPI_SEND_FUNC)
-    def test_check_supported_features(self, mock_send_eapi_req):
-        self.drv._get_random_name = mock.MagicMock()
-        self.drv._get_random_name.return_value = 'RegionOne'
-
-        self.drv.check_supported_features()
-
-        get_eos_master_cmd = ['show openstack agent uuid']
-        instance_command = ['show openstack instances']
-        cmds = [get_eos_master_cmd, instance_command]
-
-        calls = []
-        calls.extend(mock.call(cmds=cmd, commands_to_log=cmd) for cmd in cmds)
-        mock_send_eapi_req.assert_has_calls(calls)
-
-    @patch(EAPI_SEND_FUNC)
     def test_register_with_eos(self, mock_send_eapi_req):
         self.drv.register_with_eos()
         cmd1 = ['show openstack agent uuid']
@@ -1622,12 +1600,8 @@ class NegativeRPCWrapperTestCase(testlib_api.SqlTestCase):
         super(NegativeRPCWrapperTestCase, self).setUp()
         setup_valid_config()
 
-    @patch("jsonrpclib.Server")
-    def test_exception_is_raised_on_json_server_error(self, mock_json_server):
+    def test_exception_is_raised_on_json_server_error(self):
         # Mock for maintain_connections
-        mock_arista = mock_json_server.return_value
-        mock_arista.runCmds.return_value = [{'chassisId': '01-23-45-67-89-01'}]
-
         ndb = db_lib.NeutronNets()
         drv = AristaRPCWrapperEapi(ndb)
 
@@ -1944,8 +1918,11 @@ class SyncServiceTest(testlib_api.SqlTestCase):
         super(SyncServiceTest, self).setUp()
         self.rpc = mock.MagicMock()
         ndb = db_lib.NeutronNets()
+        managed_networks = []
+        manage_physnet = False
         self.admin_ctx = get_admin_context()
-        self.sync_service = arista_ml2.SyncService(self.rpc, ndb)
+        self.sync_service = arista_sync.SyncService(
+            self.rpc, ndb, manage_physnet, managed_networks)
         self.sync_service._force_sync = False
 
     def test_region_in_sync(self):
@@ -2001,7 +1978,6 @@ class SyncServiceTest(testlib_api.SqlTestCase):
             mock.call.get_region_updated_time(),
             mock.call.sync_start(),
             mock.call.register_with_eos(sync=True),
-            mock.call.check_supported_features(),
             mock.call.get_tenants(),
             mock.call.create_network_bulk(
                 tenant_id,
@@ -2098,7 +2074,6 @@ class SyncServiceTest(testlib_api.SqlTestCase):
         self.rpc.sync_end.return_value = True
         self.rpc.check_cvx_availability.return_value = True
 
-        self.rpc._baremetal_supported.return_value = False
         self.rpc.get_all_baremetal_hosts.return_value = {}
 
         self.sync_service.do_synchronize()
@@ -2110,7 +2085,6 @@ class SyncServiceTest(testlib_api.SqlTestCase):
             mock.call.get_region_updated_time().__nonzero__(),
             mock.call.sync_start(),
             mock.call.register_with_eos(sync=True),
-            mock.call.check_supported_features(),
             mock.call.get_tenants(),
 
             mock.call.create_network_bulk(
@@ -2166,7 +2140,6 @@ class SyncServiceTest(testlib_api.SqlTestCase):
         self.rpc.sync_end.return_value = True
         self.rpc.check_cvx_availability.return_value = True
 
-        self.rpc._baremetal_supported.return_value = False
         self.rpc.get_all_baremetal_hosts.return_value = {}
 
         self.sync_service.do_synchronize()
@@ -2178,7 +2151,6 @@ class SyncServiceTest(testlib_api.SqlTestCase):
             mock.call.get_region_updated_time().__nonzero__(),
             mock.call.sync_start(),
             mock.call.register_with_eos(sync=True),
-            mock.call.check_supported_features(),
             mock.call.get_tenants(),
 
             mock.call.create_network_bulk(

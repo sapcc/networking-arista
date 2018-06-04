@@ -17,8 +17,11 @@ import threading
 
 try:
     from neutron_lib.worker import BaseWorker
+    is_neutron_lib_worker = True
 except ImportError:
+    # Mitaka
     from neutron.worker import NeutronWorker as BaseWorker
+    is_neutron_lib_worker = False
 
 from neutron import context as neutron_context
 from oslo_config import cfg
@@ -35,7 +38,10 @@ LOG = logging.getLogger(__name__)
 
 class AristaSyncWorker(BaseWorker):
     def __init__(self, rpc, ndb, manage_fabric, managed_physnets):
-        super(AristaSyncWorker, self).__init__(worker_process_count=0)
+        base_args = dict()
+        if is_neutron_lib_worker:
+            base_args['worker_process_count'] = 0
+        super(AristaSyncWorker, self).__init__(**base_args)
         self.ndb = ndb
         self.rpc = rpc
         self.sync_service = SyncService(rpc, ndb, manage_fabric,
@@ -81,12 +87,15 @@ class SyncService(object):
     are always in sync with Neutron DB.
     """
 
-    def __init__(self, rpc_wrapper, neutron_db):
+    def __init__(self, rpc_wrapper, neutron_db, manage_fabric=True,
+                 managed_physnets=None):
         self._context = neutron_context.get_admin_context()
         self._rpc = rpc_wrapper
         self._ndb = neutron_db
         self._force_sync = True
         self._region_updated_time = None
+        self._manage_fabric = manage_fabric
+        self._managed_physnets = managed_physnets
 
     def force_sync(self):
         """Sets the force_sync flag."""
@@ -139,7 +148,6 @@ class SyncService(object):
         try:
             # Register with EOS to ensure that it has correct credentials
             self._rpc.register_with_eos(sync=True)
-            self._rpc.check_supported_features()
             eos_tenants = self._rpc.get_tenants()
         except arista_exc.AristaRpcError:
             LOG.warning(constants.EOS_UNREACHABLE_MSG)
@@ -221,24 +229,18 @@ class SyncService(object):
                 if vms_to_delete:
                     self._rpc.delete_vm_bulk(tenant, vms_to_delete, sync=True)
                 if routers_to_delete:
-                    if self._rpc.bm_and_dvr_supported():
-                        self._rpc.delete_instance_bulk(
-                            tenant,
-                            routers_to_delete,
-                            constants.InstanceType.ROUTER,
-                            sync=True)
-                    else:
-                        LOG.info(constants.ERR_DVR_NOT_SUPPORTED)
+                    self._rpc.delete_instance_bulk(
+                        tenant,
+                        routers_to_delete,
+                        constants.InstanceType.ROUTER,
+                        sync=True)
 
                 if bms_to_delete:
-                    if self._rpc.bm_and_dvr_supported():
-                        self._rpc.delete_instance_bulk(
-                            tenant,
-                            bms_to_delete,
-                            constants.InstanceType.BAREMETAL,
-                            sync=True)
-                    else:
-                        LOG.info(constants.BAREMETAL_NOT_SUPPORTED)
+                    self._rpc.delete_instance_bulk(
+                        tenant,
+                        bms_to_delete,
+                        constants.InstanceType.BAREMETAL,
+                        sync=True)
 
                 if nets_to_delete:
                     self._rpc.delete_network_bulk(tenant, nets_to_delete,

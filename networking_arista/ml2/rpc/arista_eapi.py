@@ -135,24 +135,6 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
             LOG.warning(msg)
             raise
 
-    def check_supported_features(self):
-        cmd = ['show openstack instances']
-        try:
-            self._run_eos_cmds(cmd)
-            self.cli_commands[CMD_INSTANCE] = 'instance'
-        except (arista_exc.AristaRpcError, Exception) as err:
-            self.cli_commands[CMD_INSTANCE] = None
-            LOG.warning(_LW("'instance' command is not available on EOS "
-                            "because of %s"), err)
-
-        # Get list of supported openstack features by CVX
-        cmd = ['show openstack features']
-        try:
-            resp = self._run_eos_cmds(cmd)
-            self.cli_commands['features'] = resp[0].get('features', {})
-        except (Exception, arista_exc.AristaRpcError):
-            self.cli_commands['features'] = {}
-
     def check_vlan_type_driver_commands(self):
         """Checks the validity of CLI commands for Arista's VLAN type driver.
 
@@ -207,18 +189,6 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
         tenants = command_output[0]['tenants']
 
         return tenants
-
-    def bm_and_dvr_supported(self):
-        return (self.cli_commands[CMD_INSTANCE] == 'instance')
-
-    def _baremetal_support_check(self, vnic_type):
-        # Basic error checking for baremental deployments
-        if (vnic_type == portbindings.VNIC_BAREMETAL and
-                not self.bm_and_dvr_supported()):
-            msg = _("Baremetal instances are not supported in this"
-                    " release of EOS")
-            LOG.error(msg)
-            raise arista_exc.AristaConfigError(msg=msg)
 
     def plug_port_into_network(self, device_id, host_id, port_id,
                                net_id, tenant_id, port_name, device_owner,
@@ -379,10 +349,6 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
     def plug_distributed_router_port_into_network(self, router_id, host,
                                                   port_id, net_id, tenant_id,
                                                   segments):
-        if not self.bm_and_dvr_supported():
-            LOG.info(const.ERR_DVR_NOT_SUPPORTED)
-            return
-
         cmds = ['tenant %s' % tenant_id,
                 'instance id %s type router' % router_id,
                 'port id %s network-id %s hostid %s' % (port_id, net_id, host)]
@@ -431,10 +397,6 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
 
     def unplug_distributed_router_port_from_network(self, router_id,
                                                     port_id, host, tenant_id):
-        if not self.bm_and_dvr_supported():
-            LOG.info(const.ERR_DVR_NOT_SUPPORTED)
-            return
-
         # When the last router port is removed, the router is deleted from EOS.
         cmds = ['tenant %s' % tenant_id,
                 'instance id %s type router' % router_id,
@@ -454,10 +416,9 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
 
             cmds.extend(
                 'segment %s type %s id %d %s' % (
-                    seg['id'] if self.hpb_supported() else 1,
+                    seg['id'],
                     seg['network_type'], seg['segmentation_id'],
-                    ('dynamic' if seg.get('is_dynamic', False) else 'static'
-                    if self.hpb_supported() else ''))
+                    ('dynamic' if seg.get('is_dynamic', False) else 'static'))
                 for seg in network['segments']
                 if seg['network_type'] != const.NETWORK_TYPE_FLAT
             )
@@ -479,8 +440,7 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
             cmds.extend(
                 'segment %s type %s id %d %s' % (
                     seg['id'], seg['network_type'], seg['segmentation_id'],
-                    ('dynamic' if seg.get('is_dynamic', False) else 'static'
-                    if self.hpb_supported() else ''))
+                    ('dynamic' if seg.get('is_dynamic', False) else 'static'))
                 for seg in segments)
             self._run_openstack_cmds(cmds)
 
@@ -558,8 +518,7 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                 network_id = neutron_port['network_id']
                 segments = []
 
-                if (self.hpb_supported() and
-                        device_owner != n_const.DEVICE_OWNER_DVR_INTERFACE):
+                if device_owner != n_const.DEVICE_OWNER_DVR_INTERFACE:
                     filters = {'port_id': port_id,
                                'host': v_port['hosts'][0]}
                     segments = db_lib.get_port_binding_level(context, filters)
@@ -614,9 +573,6 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                             segment.level, segment.segment_id)
                             for segment in segments)
                 elif device_owner == n_const.DEVICE_OWNER_DVR_INTERFACE:
-                    if not self.bm_and_dvr_supported():
-                        LOG.info(const.ERR_DVR_NOT_SUPPORTED)
-                        continue
                     append_cmd('instance id %s type router' % (
                         neutron_port['device_id']))
                     for host in v_port['hosts']:
@@ -690,9 +646,6 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
 
     def _sync_supported(self):
         return True
-
-    def hpb_supported(self):
-        return 'hierarchical-port-binding' in self.cli_commands['features']
 
     def sync_start(self):
         try:

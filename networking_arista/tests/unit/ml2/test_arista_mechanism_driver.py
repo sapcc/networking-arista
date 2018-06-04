@@ -1653,7 +1653,6 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
 
     def tearDown(self):
         super(RealNetStorageAristaDriverTestCase, self).tearDown()
-        self.drv.stop_synchronization_thread()
 
     def test_create_and_delete_network(self):
         tenant_id = 'ten-1'

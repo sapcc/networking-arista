@@ -13,8 +13,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
+
+try:
+    from neutron_lib.worker import BaseWorker
+except ImportError:
+    from neutron.worker import NeutronWorker as BaseWorker
+
 from neutron import context as neutron_context
+from oslo_config import cfg
 from oslo_log import log as logging
+from oslo_service import loopingcall
 
 from networking_arista._i18n import _LI
 from networking_arista.common import constants
@@ -22,6 +31,46 @@ from networking_arista.common import db_lib
 from networking_arista.common import exceptions as arista_exc
 
 LOG = logging.getLogger(__name__)
+
+
+class AristaSyncWorker(BaseWorker):
+    def __init__(self, rpc, ndb, manage_fabric, managed_physnets):
+        super(AristaSyncWorker, self).__init__(worker_process_count=0)
+        self.ndb = ndb
+        self.rpc = rpc
+        self.sync_service = SyncService(rpc, ndb, manage_fabric,
+                                        managed_physnets)
+        rpc.sync_service = self.sync_service
+        self._loop = None
+
+    def start(self):
+        super(AristaSyncWorker, self).start()
+
+        self._sync_running = True
+        self._sync_event = threading.Event()
+
+        # Registering with EOS updates self.rpc.region_updated_time. Clear it
+        # to force an initial sync
+        self.rpc.clear_region_updated_time()
+
+        if self._loop is None:
+            self._loop = loopingcall.FixedIntervalLoopingCall(
+                self.sync_service.do_synchronize
+            )
+        self._loop.start(interval=cfg.CONF.ml2_arista.sync_interval)
+
+    def stop(self, graceful=False):
+        if self._loop is not None:
+            self._loop.stop()
+
+    def wait(self):
+        if self._loop is not None:
+            self._loop.wait()
+
+    def reset(self):
+        self.stop()
+        self.wait()
+        self.start()
 
 
 class SyncService(object):
@@ -212,7 +261,7 @@ class SyncService(object):
                 LOG.warning(constants.EOS_UNREACHABLE_MSG)
                 self._force_sync = True
 
-        # Now update the VMs
+        # Now update the instances
         for tenant in instances_to_update:
             if not instances_to_update[tenant]:
                 continue

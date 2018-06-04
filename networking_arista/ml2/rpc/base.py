@@ -69,9 +69,6 @@ class AristaRPCWrapperBase(object):
         # Indication of CVX availability in the driver.
         self._cvx_available = True
 
-        # Reference to SyncService object which is set in AristaDriver
-        self.sync_service = None
-
     def _validate_config(self):
         if cfg.CONF.ml2_arista.get('eapi_host') == '':
             msg = _('Required option eapi_host is not set')
@@ -108,8 +105,6 @@ class AristaRPCWrapperBase(object):
 
     def set_cvx_unavailable(self):
         self._cvx_available = False
-        if self.sync_service:
-            self.sync_service.force_sync()
 
     def set_cvx_available(self):
         self._cvx_available = True

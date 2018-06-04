@@ -30,7 +30,6 @@ from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import driver_api
 from oslo_config import cfg
 from oslo_log import log as logging
-from oslo_service import loopingcall
 
 from networking_arista._i18n import _, _LI, _LE
 from networking_arista.common import config  # noqa
@@ -38,8 +37,10 @@ from networking_arista.common import constants
 from networking_arista.common import db
 from networking_arista.common import db_lib
 from networking_arista.common import exceptions as arista_exc
-from networking_arista.ml2 import arista_ml2
-from networking_arista.ml2 import rpc as ml2_rpc
+from networking_arista.ml2 import arista_sync
+from networking_arista.ml2.rpc import arista_eapi
+from networking_arista.ml2.rpc import arista_json
+from networking_arista.ml2.rpc import arista_nocvx
 from networking_arista.ml2 import sec_group_callback
 
 LOG = logging.getLogger(__name__)
@@ -66,28 +67,26 @@ class AristaDriver(driver_api.MechanismDriver):
         self.ndb = db_lib.NeutronNets()
         confg = cfg.CONF.ml2_arista
         self.segmentation_type = db_lib.VLAN_SEGMENTATION
-        self.timer = loopingcall.FixedIntervalLoopingCall(
-            self._synchronization_thread)
-        self.sync_timeout = confg['sync_interval']
+        self.timer = None
         self.managed_physnets = confg['managed_physnets']
 
         self.eapi = None
 
-        if rpc:
+        if rpc is not None:
             LOG.info("Using passed in parameter for RPC")
             self.rpc = rpc
             self.eapi = rpc
         else:
-            self.eapi = rpc.AristaRPCWrapperEapi(self.ndb)
+            self.eapi = arista_eapi.AristaRPCWrapperEapi(self.ndb)
             api_type = confg['api_type'].upper()
             if api_type == 'EAPI':
                 LOG.info("Using EAPI for RPC")
-                self.rpc = ml2_rpc.arista_eapi.AristaRPCWrapperEapi(self.ndb)
+                self.rpc = arista_eapi.AristaRPCWrapperEapi(self.ndb)
             elif api_type == 'JSON':
                 LOG.info("Using JSON for RPC")
-                self.rpc = ml2_rpc.arista_json.AristaRPCWrapperJSON(self.ndb)
+                self.rpc = arista_json.AristaRPCWrapperJSON(self.ndb)
             elif api_type == 'NOCVX':
-                self.rpc = ml2_rpc.arista_nocvx.AristaNoCvxWrapperBase(
+                self.rpc = arista_nocvx.AristaNoCvxWrapperBase(
                     self.ndb)
                 self.eapi = self.rpc
             else:
@@ -95,8 +94,6 @@ class AristaDriver(driver_api.MechanismDriver):
                 LOG.error(msg)
                 raise arista_exc.AristaRpcError(msg=msg)
 
-        self.sync_service = arista_ml2.SyncService(self.rpc, self.ndb)
-        self.rpc.sync_service = self.sync_service
         self.sg_handler = None
 
     def initialize(self):
@@ -110,7 +107,11 @@ class AristaDriver(driver_api.MechanismDriver):
         # to force an initial sync
         self.rpc.clear_region_updated_time()
         self.sg_handler = sec_group_callback.AristaSecurityGroupHandler(self)
-        self.timer.start(self.sync_timeout, stop_on_exception=False)
+
+    def get_workers(self):
+        return [arista_sync.AristaSyncWorker(self.rpc, self.ndb,
+                                             self.manage_fabric,
+                                             self.managed_physnets)]
 
     def create_network_precommit(self, context):
         """Remember the tenant, and network information."""
@@ -373,22 +374,6 @@ class AristaDriver(driver_api.MechanismDriver):
             elif port.get('binding:vnic_type') == portbindings.VNIC_BAREMETAL:
                 # The network_type is vlan, try binding process for baremetal.
                 self._bind_port_to_baremetal(context, segment)
-            else:
-                continue
-
-    def create_port_postcommit(self, context):
-        """Plug a physical host into a network.
-
-        Send provisioning request to Arista Hardware to plug a host
-        into appropriate network.
-        """
-
-        # Returning from here, since the update_port_postcommit is performing
-        # same operation, and also need of port binding information to decide
-        # whether to react to a port create event which is not available when
-        # this method is called.
-
-        return
 
     def _network_owner_tenant(self, context, network_id, tenant_id):
         tid = tenant_id
@@ -971,14 +956,6 @@ class AristaDriver(driver_api.MechanismDriver):
         fqdns_used = cfg.CONF.ml2_arista['use_fqdn']
         return hostname if fqdns_used else hostname.split('.')[0]
 
-    def _synchronization_thread(self):
-        self.sync_service.do_synchronize()
-
-    def stop_synchronization_thread(self):
-        if self.timer:
-            self.timer.stop()
-            self.timer = None
-
     # @enginefacade.writer
     def _cleanup_db(self, context):
         """Clean up any unnecessary entries in our DB."""
@@ -1100,12 +1077,12 @@ def cli():
     api_type = confg['api_type'].upper()
     if api_type == 'EAPI':
         LOG.info("Using EAPI for RPC")
-        rpc = ml2_rpc.AristaRPCWrapperEapi(ndb)
+        rpc = arista_eapi.AristaRPCWrapperEapi(ndb)
     elif api_type == 'JSON':
         LOG.info("Using JSON for RPC")
-        rpc = ml2_rpc.arista_json.AristaRPCWrapperJSON(ndb)
+        rpc = arista_json.AristaRPCWrapperJSON(ndb)
     elif api_type == 'NOCVX':
-        rpc = ml2_rpc.AristaNoCvxWrapperBase(ndb)
+        rpc = arista_nocvx.AristaNoCvxWrapperBase(ndb)
     else:
         msg = "RPC mechanism %s not recognized" % api_type
         LOG.error(msg)

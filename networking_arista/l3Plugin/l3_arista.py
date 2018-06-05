@@ -43,6 +43,7 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
                             extraroute_db.ExtraRoute_db_mixin,
                             l3_gwmode_db.L3_NAT_db_mixin,
                             l3_agentschedulers_db.L3AgentSchedulerDbMixin):
+
     """Implements L3 Router service plugin for Arista hardware.
 
     Creates routers in Arista hardware, manages them, adds/deletes interfaces

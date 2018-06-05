@@ -24,6 +24,7 @@ from networking_arista.common import api
 from networking_arista.common import exceptions as arista_exc
 
 LOG = logging.getLogger(__name__)
+cfg.CONF.import_group('l3_arista', 'networking_arista.common.config')
 
 EOS_UNREACHABLE_MSG = _('Unable to reach EOS')
 DEFAULT_VLAN = 1
@@ -49,7 +50,7 @@ router_in_vrf = {
                   'remove': ['no interface vlan {0}']}}
 
 router_in_default_vrf = {
-    'router': {'create': [],  # Place holder for now.
+    'router': {'create': [],   # Place holder for now.
                'delete': []},  # Place holder for now.
 
     'interface': {'add': ['ip routing',
@@ -93,7 +94,6 @@ class AristaL3Driver(object):
     EOS - operating system used on Arista hardware
     Command API - JSON RPC API provided by Arista EOS
     """
-
     def __init__(self):
         self._servers = []
         self._hosts = []

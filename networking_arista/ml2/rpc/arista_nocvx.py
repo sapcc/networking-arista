@@ -23,13 +23,13 @@ from networking_arista.ml2.rpc.base import AristaRPCWrapperBase
 LOG = logging.getLogger(__name__)
 
 
-class AristaNoCvxWrapperBase(AristaRPCWrapperBase,
-                             arista_sec_gp.AristaSwitchRPCMixin):
+class AristaRPCWrapperNoCvx(AristaRPCWrapperBase,
+                            arista_sec_gp.AristaSwitchRPCMixin):
     """Wraps Arista Direct Communication.
     """
 
     def __init__(self, neutron_db=None):
-        super(AristaNoCvxWrapperBase, self).__init__(neutron_db)
+        super(AristaRPCWrapperNoCvx, self).__init__(neutron_db)
         arista_sec_gp.AristaSwitchRPCMixin._validate_config(
             self, _('when "api_type" is "nocvx"')
         )

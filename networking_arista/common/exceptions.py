@@ -16,7 +16,10 @@
 
 """Exceptions used by Arista ML2 Mechanism Driver."""
 
-from neutron.common import exceptions
+try:
+    from neutron_lib import exceptions
+except ImportError:
+    from neutron.common import exceptions
 
 from networking_arista._i18n import _
 

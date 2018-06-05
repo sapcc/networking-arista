@@ -33,9 +33,9 @@ from networking_arista.common import db_lib
 from networking_arista.common import exceptions as arista_exc
 from networking_arista.ml2 import arista_sync
 from networking_arista.ml2 import mechanism_arista
-from networking_arista.ml2.rpc.arista_eapi import AristaRPCWrapperEapi
 from networking_arista.ml2.rpc.arista_eapi import CMD_INSTANCE
-from networking_arista.ml2.rpc.arista_json import AristaRPCWrapperJSON
+from networking_arista.ml2.rpc import AristaRPCWrapperEapi
+from networking_arista.ml2.rpc import AristaRPCWrapperJSON
 
 
 def setup_arista_wrapper_config(value=''):

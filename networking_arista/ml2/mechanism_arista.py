@@ -32,16 +32,16 @@ from oslo_config import cfg
 from oslo_log import log as logging
 
 from networking_arista._i18n import _, _LI, _LE
-from networking_arista.common import config  # noqa
 from networking_arista.common import constants
 from networking_arista.common import db
 from networking_arista.common import db_lib
 from networking_arista.common import exceptions as arista_exc
+from networking_arista.common import utils
 from networking_arista.ml2 import arista_sync
-from networking_arista.ml2.rpc import arista_eapi
-from networking_arista.ml2.rpc import arista_json
-from networking_arista.ml2.rpc import arista_nocvx
+from networking_arista.ml2.rpc.arista_eapi import AristaRPCWrapperEapi
+from networking_arista.ml2.rpc import get_rpc_wrapper
 from networking_arista.ml2 import sec_group_callback
+
 
 LOG = logging.getLogger(__name__)
 cfg.CONF.import_group('ml2_arista', 'networking_arista.common.config')
@@ -62,9 +62,10 @@ class AristaDriver(driver_api.MechanismDriver):
     Does not send network provisioning request if the network has already been
     provisioned before for the given port.
     """
-
     def __init__(self, rpc=None):
+
         self.ndb = db_lib.NeutronNets()
+
         confg = cfg.CONF.ml2_arista
         self.segmentation_type = db_lib.VLAN_SEGMENTATION
         self.timer = None
@@ -72,41 +73,30 @@ class AristaDriver(driver_api.MechanismDriver):
         self.manage_fabric = confg['manage_fabric']
 
         self.eapi = None
+        self.sg_handler = None
 
         if rpc is not None:
             LOG.info("Using passed in parameter for RPC")
             self.rpc = rpc
             self.eapi = rpc
         else:
-            self.eapi = arista_eapi.AristaRPCWrapperEapi(self.ndb)
             api_type = confg['api_type'].upper()
-            if api_type == 'EAPI':
-                LOG.info("Using EAPI for RPC")
-                self.rpc = arista_eapi.AristaRPCWrapperEapi(self.ndb)
-            elif api_type == 'JSON':
-                LOG.info("Using JSON for RPC")
-                self.rpc = arista_json.AristaRPCWrapperJSON(self.ndb)
-            elif api_type == 'NOCVX':
-                self.rpc = arista_nocvx.AristaNoCvxWrapperBase(
-                    self.ndb)
+            self.rpc = get_rpc_wrapper(confg)(self.ndb)
+            if api_type == 'NOCVX':
                 self.eapi = self.rpc
             else:
-                msg = "RPC mechanism %s not recognized" % api_type
-                LOG.error(msg)
-                raise arista_exc.AristaRpcError(msg=msg)
-
-        self.sg_handler = None
+                self.eapi = AristaRPCWrapperEapi(self.ndb)
 
     def initialize(self):
         if self.rpc.check_cvx_availability():
             self.rpc.register_with_eos()
 
+        self.sg_handler = sec_group_callback.AristaSecurityGroupHandler(self)
         context = get_admin_context()
         self._cleanup_db(context)
         # Registering with EOS updates self.rpc.region_updated_time. Clear it
         # to force an initial sync
         self.rpc.clear_region_updated_time()
-        self.sg_handler = sec_group_callback.AristaSecurityGroupHandler(self)
 
     def get_workers(self):
         return [arista_sync.AristaSyncWorker(self.rpc, self.ndb,
@@ -226,7 +216,6 @@ class AristaDriver(driver_api.MechanismDriver):
         """Send network delete request to Arista HW."""
         network = context.current
         segments = context.network_segments
-
         network_id = network['id']
         tenant_id = network['tenant_id'] or constants.INTERNAL_TENANT_ID
 
@@ -372,8 +361,11 @@ class AristaDriver(driver_api.MechanismDriver):
         return tid
 
     def _is_in_managed_physnets(self, physnet):
-        if not self.managed_physnets:
+        # Check if this is a fabric segment
+        if not physnet:
+            return self.manage_fabric
             # If managed physnet is empty, accept all.
+        if not self.managed_physnets:
             return True
         # managed physnet is not empty, find for matching physnet
         return any(pn == physnet for pn in self.managed_physnets)
@@ -385,8 +377,10 @@ class AristaDriver(driver_api.MechanismDriver):
         segment is included in the managed physical network list.
         """
         if not self.managed_physnets:
-            return [binding_level.get(driver_api.BOUND_SEGMENT) for
-                    binding_level in context.binding_levels or []]
+            return [
+                binding_level.get(driver_api.BOUND_SEGMENT)
+                for binding_level in (context.binding_levels or [])
+            ]
 
         bound_segments = []
         for binding_level in (context.binding_levels or []):
@@ -635,11 +629,14 @@ class AristaDriver(driver_api.MechanismDriver):
             # Return from here as port migration is already handled.
             return
 
-        seg_info = self._bound_segments(context)
-        if not seg_info:
-            LOG.debug("Ignoring the update as the port %s is not managed by "
-                      "Arista switches.", port_id)
-            return
+        # Check if it is trunk_port deletion case
+        seg_info = []
+        if not port.get('trunk_details') or host:
+            seg_info = self._bound_segments(context)
+            if not seg_info:
+                LOG.debug("Ignoring the update as the port is not managed by "
+                          "Arista switches.")
+                return
 
         hostname = self._host_name(host)
         port_host_filter = None
@@ -676,8 +673,10 @@ class AristaDriver(driver_api.MechanismDriver):
         try:
             orig_host = context.original_host
             port_down = False
-            if port['device_owner'] == n_const.DEVICE_OWNER_DVR_INTERFACE:
-                # We care about port status only for DVR ports
+            if(port['device_owner'] == n_const.DEVICE_OWNER_DVR_INTERFACE
+               or port.get('trunk_details')):
+                # We care about port status only for DVR ports and
+                # trunk ports
                 port_down = context.status == n_const.PORT_STATUS_DOWN
 
             if orig_host and (port_down or host != orig_host):
@@ -784,6 +783,10 @@ class AristaDriver(driver_api.MechanismDriver):
         port_id = port['id']
         network_id = port['network_id']
         device_owner = port['device_owner']
+
+        if not utils.supported_device_owner(device_owner):
+            return
+
         vnic_type = port['binding:vnic_type']
         binding_profile = port['binding:profile']
         switch_bindings = []
@@ -990,21 +993,16 @@ class AristaDriver(driver_api.MechanismDriver):
             raise arista_exc.AristaSecurityGroupError(msg=msg)
 
     def delete_security_group_rule(self, context, sgr_id):
-        if not sgr_id:
-            return
-        sgr = self.ndb.get_security_group_rule(context, sgr_id)
-        if not sgr:
-            return
-
-        if not self._is_security_group_used(context, sgr['security_group_id']):
-            return
-
-        try:
-            self.rpc.delete_acl_rule(sgr)
-        except Exception:
-            msg = (_('Failed to delete ACL rule on EOS %s') % sgr)
-            LOG.exception(msg)
-            raise arista_exc.AristaSecurityGroupError(msg=msg)
+        if sgr_id:
+            sgr = self.ndb.get_security_group_rule(context, sgr_id)
+            if sgr and not self._is_security_group_used(
+                    context, sgr['security_group_id']):
+                try:
+                    self.rpc.delete_acl_rule(sgr)
+                except Exception:
+                    msg = (_('Failed to delete ACL rule on EOS %s') % sgr)
+                    LOG.exception(msg)
+                    raise arista_exc.AristaSecurityGroupError(msg=msg)
 
     @staticmethod
     def _is_security_group_used(context, security_group_id):
@@ -1028,7 +1026,7 @@ def cli():
     from oslo_config import cfg
     from sqlalchemy.orm import contains_eager, joinedload, relationship
 
-    config.CONF.register_cli_opts([
+    cfg.CONF.register_cli_opts([
         cfg.MultiStrOpt('port_id',
                         short='p',
                         default=[],
@@ -1040,27 +1038,15 @@ def cli():
     ])
     common_config.init(sys.argv[1:])
 
-    if not config.CONF.all_ports and not config.CONF.port_id:
+    if not cfg.CONF.all_ports and not cfg.CONF.port_id:
         LOG.error("Nothing to do, specify either port_id or all_ports")
         return
 
     context = get_admin_context()
     ndb = db_lib.NeutronNets()
-    confg = config.CONF.ml2_arista
+    confg = cfg.CONF.ml2_arista
 
-    api_type = confg['api_type'].upper()
-    if api_type == 'EAPI':
-        LOG.info("Using EAPI for RPC")
-        rpc = arista_eapi.AristaRPCWrapperEapi(ndb)
-    elif api_type == 'JSON':
-        LOG.info("Using JSON for RPC")
-        rpc = arista_json.AristaRPCWrapperJSON(ndb)
-    elif api_type == 'NOCVX':
-        rpc = arista_nocvx.AristaNoCvxWrapperBase(ndb)
-    else:
-        msg = "RPC mechanism %s not recognized" % api_type
-        LOG.error(msg)
-        raise arista_exc.AristaRpcError(msg=msg)
+    rpc = get_rpc_wrapper(confg)(ndb)
 
     Port.port_binding_levels = relationship(PortBindingLevel)
     PortBindingLevel.segment = relationship(NetworkSegment,
@@ -1076,8 +1062,8 @@ def cli():
             filter(PortBindingLevel.driver == constants.MECHANISM_DRV_NAME). \
             options(contains_eager(Port.port_binding_levels))
 
-        if config.CONF.port_id:
-            ports.filter(Port.id.in_(config.CONF.port_id))
+        if cfg.CONF.port_id:
+            ports.filter(Port.id.in_(cfg.CONF.port_id))
 
         for port in ports:
             port_id = port.id

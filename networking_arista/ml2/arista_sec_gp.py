@@ -22,6 +22,7 @@ import socket
 from collections import defaultdict
 from eventlet.greenpool import GreenPool as Pool
 from eventlet.semaphore import Semaphore as Lock
+from eventlet import sleep
 from hashlib import sha1
 from httplib import HTTPException
 import requests
@@ -238,16 +239,20 @@ class AristaSwitchRPCMixin(object):
             switch_pass = ''
         eapi_server_url = ('https://%s:%s@%s/command-api' %
                            (switch_user, switch_pass, switch_ip))
-        try:
-            def server(cmds):
-                return self._send_eapi_req(eapi_server_url, cmds)
-            ret = server(['show lldp local-info management 1'])[0]
-            system_id = EUI(ret['chassisId'])
-            self.__server_by_id[system_id] = server
-            self.__server_by_ip[switch_ip] = server
-        except (socket.error, HTTPException) as e:
-            LOG.warn("Could not connect to server %s due to %s",
-                     switch_ip, e)
+        for _ in six.moves.range(3):
+            try:
+                def server(cmds):
+                    return self._send_eapi_req(eapi_server_url, cmds)
+                ret = server(['show lldp local-info management 1'])
+                if not ret:
+                    sleep(1)
+                system_id = EUI(ret[0]['chassisId'])
+                self.__server_by_id[system_id] = server
+                self.__server_by_ip[switch_ip] = server
+                break
+            except (socket.error, HTTPException) as e:
+                LOG.warn("Could not connect to server %s due to %s",
+                         switch_ip, e)
 
     @property
     def _server_by_id(self):

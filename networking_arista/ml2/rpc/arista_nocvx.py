@@ -47,7 +47,7 @@ class AristaRPCWrapperNoCvx(AristaRPCWrapperBase,
     def plug_port_into_network(self, device_id, host_id, neutron_port_id,
                                net_id, tenant_id, port_name, device_owner,
                                sg, orig_sg, vnic_type, segments=None,
-                               switch_bindings=None, vlan_type=None):
+                               switch_bindings=None, trunk_details=None):
         LOG.debug("Plugging %s into %s", neutron_port_id, net_id)
 
         if not self._can_handle_port(segments, switch_bindings, vnic_type):

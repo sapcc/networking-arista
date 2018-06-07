@@ -167,15 +167,15 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
         return self.delete_region(self.region)
 
     def get_region(self, name):
-        path = 'region/'
-        regions = self._send_api_request(path, 'GET')
-        for region in regions:
-            if region['name'] == name:
-                return region
+        path = 'region/%s' % name
+        try:
+            regions = self._send_api_request(path, 'GET')
+            for region in regions:
+                if region['name'] == name:
+                    return region
+        except arista_exc.AristaRpcError:
+            pass
         return None
-
-    def sync_supported(self):
-        return True
 
     def sync_start(self):
         try:
@@ -363,11 +363,13 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
         }
 
     def _create_port_data(self, port_id, tenant_id, network_id, instance_id,
-                          name, instance_type, hosts):
+                          name, instance_type, hosts, device_owner=None):
 
         vlan_type = 'allowed'
         if instance_type in const.InstanceType.BAREMETAL_INSTANCE_TYPES:
             vlan_type = 'native'
+            if device_owner and device_owner.startswith('trunk'):
+                vlan_type = 'allowed'
 
         return {
             'id': port_id,
@@ -412,9 +414,8 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
         networkSegments = {}
         portBindings = {}
 
-        for vm in six.itervalues(vms):
-            for v_port in vm['ports']:
-                port_id = v_port['portId']
+        for vm in vms.values():
+            for port_id, v_port in six.iteritems(vm['ports']):
                 if not v_port['hosts']:
                     # Skip all the ports that have no host associated with them
                     continue
@@ -424,10 +425,14 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
                 neutron_port = neutron_ports[port_id]
 
                 inst_id = vm['vmId']
-                inst_host = vm['ports'][0]['hosts'][0]
+                inst_host = v_port['hosts'][0]
                 instance = self._create_instance_data(inst_id, inst_host)
 
                 device_owner = neutron_port['device_owner']
+
+                if port_id not in port_profiles:
+                    continue
+
                 vnic_type = port_profiles[port_id]['vnic_type']
                 if device_owner == n_const.DEVICE_OWNER_DHCP:
                     instance_type = const.InstanceType.DHCP
@@ -463,7 +468,8 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
                 port = self._create_port_data(port_id, tenant_id,
                                               network_id, inst_id,
                                               neutron_port.get('name'),
-                                              instance_type, v_port['hosts'])
+                                              instance_type, v_port['hosts'],
+                                              device_owner)
                 portInst.append(port)
 
                 if instance_type in const.InstanceType.VIRTUAL_INSTANCE_TYPES:
@@ -486,16 +492,16 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
         # create instances first
         if vmInst:
             path = 'region/' + self.region + '/vm?tenantId=' + tenant_id
-            self._send_api_request(path, 'POST', vmInst.values())
+            self._send_api_request(path, 'POST', list(vmInst.values()))
         if dhcpInst:
             path = 'region/' + self.region + '/dhcp?tenantId=' + tenant_id
-            self._send_api_request(path, 'POST', dhcpInst.values())
+            self._send_api_request(path, 'POST', list(dhcpInst.values()))
         if baremetalInst:
             path = 'region/' + self.region + '/baremetal?tenantId=' + tenant_id
-            self._send_api_request(path, 'POST', baremetalInst.values())
+            self._send_api_request(path, 'POST', list(baremetalInst.values()))
         if routerInst:
             path = 'region/' + self.region + '/router?tenantId=' + tenant_id
-            self._send_api_request(path, 'POST', routerInst.values())
+            self._send_api_request(path, 'POST', list(routerInst.values()))
 
         # now create ports for the instances
         path = 'region/' + self.region + '/port'
@@ -522,11 +528,13 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
         self.delete_instance_bulk(tenant_id, dhcp_id_list,
                                   const.InstanceType.DHCP)
 
-    def delete_port(self, port_id, instance_id, instance_type):
+    def delete_port(self, port_id, instance_id, instance_type,
+                    device_owner=None):
         path = ('region/%s/port?portId=%s&id=%s&type=%s' %
                 (self.region, port_id, instance_id, instance_type))
         port = self._create_port_data(port_id, None, None, instance_id,
-                                      None, instance_type, None)
+                                      None, instance_type, None,
+                                      device_owner)
         return self._send_api_request(path, 'DELETE', [port])
 
     def get_instance_ports(self, instance_id, instance_type):
@@ -537,7 +545,7 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
     def plug_port_into_network(self, device_id, host_id, port_id,
                                net_id, tenant_id, port_name, device_owner,
                                sg, orig_sg, vnic_type, segments,
-                               switch_bindings=None, vlan_type=None):
+                               switch_bindings=None, trunk_details=None):
         device_type = ''
         if device_owner == n_const.DEVICE_OWNER_DHCP:
             device_type = const.InstanceType.DHCP
@@ -557,7 +565,8 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
         self._create_tenant_if_needed(tenant_id)
         instance = self._create_instance_data(device_id, host_id)
         port = self._create_port_data(port_id, tenant_id, net_id, device_id,
-                                      port_name, device_type, [host_id])
+                                      port_name, device_type, [host_id],
+                                      device_owner)
         url = 'region/%(region)s/%(device_type)s?tenantId=%(tenant_id)s' % {
             'region': self.region,
             'device_type': device_type,

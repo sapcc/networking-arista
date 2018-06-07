@@ -86,7 +86,6 @@ class SyncService(object):
     ensures that Networks and VMs configured on EOS/Arista HW
     are always in sync with Neutron DB.
     """
-
     def __init__(self, rpc_wrapper, neutron_db, manage_fabric=True,
                  managed_physnets=None):
         self._context = neutron_context.get_admin_context()
@@ -158,7 +157,7 @@ class SyncService(object):
 
         # Delete tenants that are in EOS, but not in the database
         tenants_to_delete = frozenset(eos_tenants.keys()).difference(
-            db_tenants.keys())
+            db_tenants)
 
         if tenants_to_delete:
             try:
@@ -172,12 +171,6 @@ class SyncService(object):
         # operations fail, then force_sync is set to true
         self._force_sync = False
 
-        # Create a dict of networks keyed by id.
-        neutron_nets = dict(
-            (network['id'], network) for network in
-            self._ndb.get_all_networks(context)
-        )
-
         # Get Baremetal port switch_bindings, if any
         port_profiles = db_lib.get_all_portbindings(context)
         # To support shared networks, split the sync loop in two parts:
@@ -185,16 +178,18 @@ class SyncService(object):
         # In second loop, update VMs. This is done to ensure that networks for
         # all tenats are updated before VMs are updated
         instances_to_update = {}
-        for tenant in db_tenants.keys():
-            db_nets = db_lib.get_networks(context, tenant)
-            db_instances = db_lib.get_vms(context, tenant)
+        for tenant in db_tenants:
+            db_nets = {n['id']: n
+                       for n in self._ndb.get_all_networks_for_tenant(context,
+                                                                      tenant)}
+            db_instances = db_lib.get_instances(context, tenant)
 
             eos_nets = self._get_eos_networks(eos_tenants, tenant)
             eos_vms, eos_bms, eos_routers = self._get_eos_vms(eos_tenants,
                                                               tenant)
 
             db_nets_key_set = frozenset(db_nets.keys())
-            db_instances_key_set = frozenset(db_instances.keys())
+            db_instances_key_set = frozenset(db_instances)
             eos_nets_key_set = frozenset(eos_nets.keys())
             eos_vms_key_set = frozenset(eos_vms.keys())
             eos_routers_key_set = frozenset(eos_routers.keys())
@@ -234,14 +229,12 @@ class SyncService(object):
                         routers_to_delete,
                         constants.InstanceType.ROUTER,
                         sync=True)
-
                 if bms_to_delete:
                     self._rpc.delete_instance_bulk(
                         tenant,
                         bms_to_delete,
                         constants.InstanceType.BAREMETAL,
                         sync=True)
-
                 if nets_to_delete:
                     self._rpc.delete_network_bulk(tenant, nets_to_delete,
                                                   sync=True)
@@ -249,9 +242,9 @@ class SyncService(object):
                     networks = [{
                         'network_id': net_id,
                         'network_name':
-                            neutron_nets.get(net_id, {'name': ''})['name'],
+                            db_nets.get(net_id, {'name': ''})['name'],
                         'shared':
-                            neutron_nets.get(net_id,
+                            db_nets.get(net_id,
                                              {'shared': False})['shared'],
                         'segments': self._ndb.get_all_network_segments(context,
                                                                        net_id),
@@ -277,12 +270,12 @@ class SyncService(object):
                         self._port_dict_representation(port))
 
                 if ports_of_interest:
-                    db_vms = db_lib.get_vms(context, tenant)
-                    if db_vms:
-                        self._rpc.create_instance_bulk(context,
-                                                       tenant,
+                    instance_ports = db_lib.get_instance_ports(context,
+                        tenant, self._manage_fabric, self._managed_physnets)
+                    if instance_ports:
+                        self._rpc.create_instance_bulk(tenant,
                                                        ports_of_interest,
-                                                       db_vms,
+                                                       instance_ports,
                                                        port_profiles,
                                                        sync=True)
             except arista_exc.AristaRpcError:

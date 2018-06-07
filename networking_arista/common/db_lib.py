@@ -14,382 +14,110 @@
 # limitations under the License.
 
 from neutron.db import db_base_plugin_v2
+from neutron.db import models_v2
 from neutron.db.securitygroups_rpc_base import SecurityGroupServerRpcMixin
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2 import db as segments_db
 from neutron.plugins.ml2 import driver_api
 from neutron.plugins.ml2 import models as ml2_models
+
+from networking_arista.common import utils
 from sqlalchemy import literal
 
-from networking_arista.common import db as db_models
 
 VLAN_SEGMENTATION = 'vlan'
 
 
-def remember_tenant(context, tenant_id):
-    """Stores a tenant information in repository.
+def get_instance_ports(context, tenant_id, manage_fabric=True,
+                       managed_physnets=None):
+    """Returns all instance ports for a given tenant."""
+    session = context.session()
+    with session.begin():
+        # hack for pep8 E711: comparison to None should be
+        # 'if cond is not None'
+        none = None
+        port_model = models_v2.Port
+        binding_level_model = ml2_models.PortBindingLevel
+        segment_model = ml2_models.NetworkSegment
+        all_ports = (session
+                     .query(port_model, binding_level_model, segment_model)
+                     .join(binding_level_model)
+                     .join(segment_model)
+                     .filter(port_model.tenant_id == tenant_id,
+                             binding_level_model.host != none,
+                             port_model.device_id != none,
+                             port_model.network_id != none))
+        if not manage_fabric:
+            all_ports = all_ports.filter(
+                segment_model.physical_network != none)
+        if managed_physnets is not None:
+            managed_physnets.append(None)
+            all_ports = all_ports.filter(segment_model.physical_network.in_(
+                managed_physnets))
 
-    :param context: context of the transaction
-    :param tenant_id: globally unique neutron tenant identifier
-    """
+        def eos_port_representation(port):
+            return {u'portId': port.id,
+                    u'deviceId': port.device_id,
+                    u'hosts': set([bl.host for bl in port.binding_levels]),
+                    u'networkId': port.network_id}
+
+        ports = {}
+        for port in all_ports:
+            if not utils.supported_device_owner(port.Port.device_owner):
+                continue
+            ports[port.Port.id] = eos_port_representation(port.Port)
+
+        vm_dict = dict()
+
+        def eos_vm_representation(port):
+            return {u'vmId': port['deviceId'],
+                    u'baremetal_instance': False,
+                    u'ports': {port['portId']: port}}
+
+        for port in ports.values():
+            deviceId = port['deviceId']
+            if deviceId in vm_dict:
+                vm_dict[deviceId]['ports'][port['portId']] = port
+            else:
+                vm_dict[deviceId] = eos_vm_representation(port)
+        return vm_dict
+
+
+def get_instances(context, tenant):
+    """Returns set of all instance ids that may be relevant on CVX."""
     session = context.session
-    with session.begin(subtransactions=True):
-        # Tenant might not be unique, but then we just have duplicates in the
-        # "set".
-        tenant = (session.query(db_models.AristaProvisionedTenants).
-                  filter_by(tenant_id=tenant_id).first())
-        if not tenant:
-            tenant = db_models.AristaProvisionedTenants(tenant_id=tenant_id)
-            session.add(tenant)
+    with session.begin():
+        port_model = models_v2.Port
+        return set(device_id[0] for device_id in
+                   session.query(port_model.device_id).
+                   filter(port_model.tenant_id == tenant).distinct())
 
 
-def forget_tenant(context, tenant_id):
-    """Removes a tenant information from repository.
-
-    :param context: context of the transaction
-    :param tenant_id: globally unique neutron tenant identifier
-    """
+def tenant_provisioned(context, tid):
+    """Returns true if any networks or ports exist for a tenant."""
     session = context.session
-    return session.query(db_models.AristaProvisionedTenants). \
-        filter_by(tenant_id=tenant_id). \
-        delete()
-
-
-def get_all_tenants(context):
-    """Returns a list of all tenants stored in repository.
-
-    :param context: context of the transaction
-    """
-    return context.session.query(db_models.AristaProvisionedTenants)
-
-
-def num_provisioned_tenants(context):
-    """Returns number of tenants stored in repository.
-
-    :param context: context of the transaction
-    """
-    return get_all_tenants(context).count()
-
-
-def remember_vm(context, vm_id, host_id, port_id, network_id, tenant_id):
-    """Stores all relevant information about a VM in repository.
-
-    :param context: context of the transaction
-    :param vm_id: globally unique identifier for VM instance
-    :param host_id: ID of the host where the VM is placed
-    :param port_id: globally unique port ID that connects VM to network
-    :param network_id: globally unique neutron network identifier
-    :param tenant_id: globally unique neutron tenant identifier
-    """
-    session = context.session
-    with session.begin(subtransactions=True):
-        vm = db_models.AristaProvisionedVms(
-            vm_id=vm_id,
-            host_id=host_id,
-            port_id=port_id,
-            network_id=network_id,
-            tenant_id=tenant_id)
-        session.add(vm)
-
-
-def forget_all_ports_for_network(context, net_id):
-    """Removes all ports for a given network from repository.
-
-    :param net_id: globally unique network ID
-    """
-    return context.session.query(db_models.AristaProvisionedVms). \
-        filter_by(network_id=net_id).delete()
-
-
-def update_port(context, vm_id, host_id, port_id, network_id, tenant_id):
-    """Updates the port details in the database.
-
-    :param vm_id: globally unique identifier for VM instance
-    :param host_id: ID of the new host where the VM is placed
-    :param port_id: globally unique port ID that connects VM to network
-    :param network_id: globally unique neutron network identifier
-    :param tenant_id: globally unique neutron tenant identifier
-    """
-    session = context.session
-    port = session.query(db_models.AristaProvisionedVms).filter_by(
-        port_id=port_id).first()
-    if port:
-        # Update the VM's host id
-        port.host_id = host_id
-        port.vm_id = vm_id
-        port.network_id = network_id
-        port.tenant_id = tenant_id
-
-
-def forget_port(context, port_id, host_id):
-    """Deletes the port from the database
-
-    :param port_id: globally unique port ID that connects VM to network
-    :param host_id: host to which the port is bound to
-    """
-    return context.session.query(db_models.AristaProvisionedVms).filter_by(
-        port_id=port_id,
-        host_id=host_id).delete()
-
-
-def remember_network_segment(context, tenant_id,
-                             network_id, segmentation_id, segment_id):
-    """Stores all relevant information about a Network in repository.
-
-    :param tenant_id: globally unique neutron tenant identifier
-    :param network_id: globally unique neutron network identifier
-    :param segmentation_id: segmentation id that is assigned to the network
-    :param segment_id: globally unique neutron network segment identifier
-    """
-    session = context.session
-    with session.begin(subtransactions=True):
-        net = db_models.AristaProvisionedNets(
-            tenant_id=tenant_id,
-            id=segment_id,
-            network_id=network_id,
-            segmentation_id=segmentation_id)
-        session.add(net)
-
-
-def forget_network_segment(context, tenant_id, network_id, segment_id=None):
-    """Deletes all relevant information about a Network from repository.
-
-    :param tenant_id: globally unique neutron tenant identifier
-    :param network_id: globally unique neutron network identifier
-    :param segment_id: globally unique neutron network segment identifier
-    """
-    filters = {
-        'tenant_id': tenant_id,
-        'network_id': network_id
-    }
-    if segment_id:
-        filters['id'] = segment_id
-
-    return context.session.query(db_models.AristaProvisionedNets). \
-        filter_by(**filters).delete()
-
-
-def get_segmentation_id(context, tenant_id, network_id):
-    """Returns Segmentation ID (VLAN) associated with a network.
-
-    :param tenant_id: globally unique neutron tenant identifier
-    :param network_id: globally unique neutron network identifier
-    """
-    session = context.session
-    return session.query(db_models.AristaProvisionedNets.segmentation_id). \
-        filter_by(tenant_id=tenant_id,
-                  network_id=network_id).first()
-
-
-def is_vm_provisioned(context, vm_id, host_id, port_id,
-                      network_id, tenant_id):
-    """Checks if a VM is already known to EOS
-
-    :returns: True, if yes; False otherwise.
-    :param vm_id: globally unique identifier for VM instance
-    :param host_id: ID of the host where the VM is placed
-    :param port_id: globally unique port ID that connects VM to network
-    :param network_id: globally unique neutron network identifier
-    :param tenant_id: globally unique neutron tenant identifier
-    """
-    session = context.session
-    return session.query(literal(True)).filter(
-        session.query(db_models.AristaProvisionedVms).
-        filter_by(tenant_id=tenant_id,
-                  vm_id=vm_id,
-                  port_id=port_id,
-                  network_id=network_id,
-                  host_id=host_id).exists()).scalar()
-
-
-def is_port_provisioned(context, port_id, host_id=None):
-    """Checks if a port is already known to EOS
-
-    :returns: True, if yes; False otherwise.
-    :param port_id: globally unique port ID that connects VM to network
-    :param host_id: host to which the port is bound to
-    """
-
-    filters = {
-        'port_id': port_id
-    }
-    if host_id:
-        filters['host_id'] = host_id
-
-    session = context.session
-
-    return session.query(literal(True)).filter(
-        session.query(db_models.AristaProvisionedVms).
-        filter_by(**filters).exists()).scalar()
-
-
-def is_network_provisioned(context,
-                           tenant_id, network_id, segmentation_id=None,
-                           segment_id=None):
-    """Checks if a networks is already known to EOS
-
-    :returns: True, if yes; False otherwise.
-    :param tenant_id: globally unique neutron tenant identifier
-    :param network_id: globally unique neutron network identifier
-    :param segment_id: globally unique neutron network segment identifier
-    """
-    filters = {'tenant_id': tenant_id,
-               'network_id': network_id}
-    if segmentation_id:
-        filters['segmentation_id'] = segmentation_id
-    if segment_id:
-        filters['id'] = segment_id
-
-    query = context.session.query
-
-    return query(literal(True)).filter(
-        query(db_models.AristaProvisionedNets).
-        filter_by(**filters).exists()).scalar()
-
-
-def is_tenant_provisioned(context, tenant_id):
-    """Checks if a tenant is already known to EOS
-
-    :returns: True, if yes; False otherwise.
-    :param tenant_id: globally unique neutron tenant identifier
-    """
-    query = context.session.query
-
-    return query(literal(True)).filter(
-        query(db_models.AristaProvisionedTenants).
-        filter_by(tenant_id=tenant_id).exists()).scalar()
-
-
-def num_nets_provisioned(context, tenant_id):
-    """Returns number of networks for a given tennat.
-
-    :param tenant_id: globally unique neutron tenant identifier
-    """
-    return context.session.query(db_models.AristaProvisionedNets). \
-        filter_by(tenant_id=tenant_id).count()
-
-
-def num_vms_provisioned(context, tenant_id):
-    """Returns number of VMs for a given tennat.
-
-    :param tenant_id: globally unique neutron tenant identifier
-    """
-    return context.session.query(db_models.AristaProvisionedVms). \
-        filter_by(tenant_id=tenant_id).count()
-
-
-def get_networks(context, tenant_id):
-    """Returns all networks for a given tenant in EOS-compatible format.
-
-    See AristaRPCWrapper.get_network_list() for return value format.
-    :param tenant_id: globally unique neutron tenant identifier
-    """
-    session = context.session
-
-    model = db_models.AristaProvisionedNets
-    if tenant_id != 'any':
-        all_nets = (session.query(model).
-                    filter(model.tenant_id == tenant_id,
-                           model.segmentation_id.isnot(None)))
-    else:
-        all_nets = (session.query(model).
-                    filter(model.segmentation_id.isnot(None)))
-
-    res = dict(
-        (net.network_id, net.eos_network_representation(
-            VLAN_SEGMENTATION))
-        for net in all_nets
+    with session.begin():
+        network_model = models_v2.Network
+        port_model = models_v2.Port
+        res = bool(
+            session.query(network_model).filter_by(tenant_id=tid).count() or
+            session.query(port_model).filter_by(tenant_id=tid).count()
     )
     return res
-
-
-def get_vms(context, tenant_id):
-    """Returns all VMs for a given tenant in EOS-compatible format.
-
-    :param tenant_id: globally unique neutron tenant identifier
-    """
-    session = context.session
-    model = db_models.AristaProvisionedVms
-    all_ports = (session.query(model).
-                 filter(model.tenant_id == tenant_id,
-                        model.host_id.isnot(None),
-                        model.vm_id.isnot(None),
-                        model.network_id.isnot(None),
-                        model.port_id.isnot(None)))
-    ports = {}
-    for port in all_ports:
-        if port.port_id not in ports:
-            ports[port.port_id] = port.eos_port_representation()
-        else:
-            ports[port.port_id]['hosts'].append(port.host_id)
-
-    vm_dict = dict()
-
-    def eos_vm_representation(port):
-        return {u'vmId': port['deviceId'],
-                u'baremetal_instance': False,
-                u'ports': [port]}
-
-    for port in ports.values():
-        deviceId = port['deviceId']
-        if deviceId in vm_dict:
-            vm_dict[deviceId]['ports'].append(port)
-        else:
-            vm_dict[deviceId] = eos_vm_representation(port)
-    return vm_dict
-
-
-def are_ports_attached_to_network(context, net_id):
-    """Returns all records associated with network in EOS-compatible format.
-
-    :param net_id: globally unique network ID
-    """
-    model = db_models.AristaProvisionedVms
-    query = context.session.query
-    return query(literal(True)).filter(
-        query(model).filter(model.network_id == net_id).exists()).scalar()
-
-
-def get_ports(context, tenant_id=None):
-    """Returns all ports of VMs in EOS-compatible format.
-
-    :param tenant_id: globally unique neutron tenant identifier
-    """
-    session = context.session
-    model = db_models.AristaProvisionedVms
-    if tenant_id:
-        all_ports = (session.query(model).
-                     filter(model.tenant_id == tenant_id,
-                            model.host_id.isnot(None),
-                            model.vm_id.isnot(None),
-                            model.network_id.isnot(None),
-                            model.port_id.isnot(None)))
-    else:
-        all_ports = (session.query(model).
-                     filter(model.tenant_id.isnot(None),
-                            model.host_id.isnot(None),
-                            model.vm_id.isnot(None),
-                            model.network_id.isnot(None),
-                            model.port_id.isnot(None)))
-    ports = {}
-    for port in all_ports:
-        if port.port_id not in ports:
-            ports[port.port_id] = port.eos_port_representation()
-        ports[port.port_id]['hosts'].append(port.host_id)
-
-    return ports
 
 
 def get_tenants(context):
-    """Returns list of all tenants in EOS-compatible format."""
+    """Returns list of all project/tenant ids that may be relevant on CVX."""
     session = context.session
-    model = db_models.AristaProvisionedTenants
-    all_tenants = session.query(model)
-    res = dict(
-        (tenant.tenant_id, tenant.eos_tenant_representation())
-        for tenant in all_tenants
-    )
-    return res
+    project_ids = set()
+    with session.begin():
+        network_model = models_v2.Network
+        project_ids |= set(pid[0] for pid in
+                           session.query(network_model.project_id).distinct())
+        port_model = models_v2.Port
+        project_ids |= set(pid[0] for pid in
+                           session.query(port_model.project_id).distinct())
+    return project_ids
 
 
 def _make_port_dict(record):

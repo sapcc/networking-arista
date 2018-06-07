@@ -20,23 +20,12 @@ from oslo_log import log as logging
 import requests
 import six
 
-from neutron.extensions import portbindings
-from neutron_lib import constants as n_const
-
 from networking_arista._i18n import _, _LI, _LW, _LE
 from networking_arista.common import constants as const
-from networking_arista.common import db_lib
 from networking_arista.common import exceptions as arista_exc
 from networking_arista.ml2.rpc.base import AristaRPCWrapperBase
 
 LOG = logging.getLogger(__name__)
-
-# Insert a heartbeat command every 100 commands
-HEARTBEAT_INTERVAL = 100
-
-# Commands dict keys
-CMD_SYNC_HEARTBEAT = 'SYNC_HEARTBEAT'
-CMD_INSTANCE = 'INSTANCE'
 
 
 class AristaRPCWrapperEapi(AristaRPCWrapperBase):
@@ -45,10 +34,6 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
         # The cli_commands dict stores the mapping between the CLI command key
         # and the actual CLI command.
         self.cli_commands = {
-            'timestamp': [
-                'show openstack config region %s timestamp' % self.region],
-            CMD_INSTANCE: None,
-            CMD_SYNC_HEARTBEAT: 'sync heartbeat',
             'resource-pool': [],
             'features': {},
         }
@@ -152,10 +137,6 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                 _LW("'resource-pool' command '%s' is not available on EOS"),
                 cmd)
 
-    def _heartbeat_required(self, sync, counter=0):
-        return (sync and self.cli_commands[CMD_SYNC_HEARTBEAT] and
-                (counter % HEARTBEAT_INTERVAL) == 0)
-
     def get_vlan_assignment_uuid(self):
         """Returns the UUID for the region's vlan assignment on CVX
 
@@ -168,6 +149,7 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
 
     def get_vlan_allocation(self):
         """Returns the status of the region's VLAN pool in CVX
+
         :returns: dictionary containg the assigned, allocated and available
                   VLANs for the region
         """
@@ -178,506 +160,19 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
         cmd = ['show openstack resource-pools region %s' % self.region]
         command_output = self._run_eos_cmds(cmd)
         if command_output:
-            phys_nets = command_output[0]['physicalNetwork']
-            if self.region in phys_nets.keys():
-                return phys_nets[self.region]['vlanPool']['default']
-        return None
-
-    def get_tenants(self):
-        cmds = ['show openstack config region %s' % self.region]
-        command_output = self._run_eos_cmds(cmds)
-        tenants = command_output[0]['tenants']
-
-        return tenants
-
-    def plug_port_into_network(self, device_id, host_id, port_id,
-                               net_id, tenant_id, port_name, device_owner,
-                               sg, orig_sg, vnic_type, segments,
-                               switch_bindings=None, vlan_type=None):
-        if device_owner == n_const.DEVICE_OWNER_DHCP:
-            self.plug_dhcp_port_into_network(device_id,
-                                             host_id,
-                                             port_id,
-                                             net_id,
-                                             tenant_id,
-                                             segments,
-                                             port_name)
-        elif (device_owner.startswith('compute') or
-              device_owner.startswith('baremetal')):
-            if vnic_type == 'baremetal':
-                self.plug_baremetal_into_network(device_id,
-                                                 host_id,
-                                                 port_id,
-                                                 net_id,
-                                                 tenant_id,
-                                                 segments,
-                                                 port_name,
-                                                 sg, orig_sg,
-                                                 vnic_type,
-                                                 switch_bindings,
-                                                 vlan_type)
-            else:
-                self.plug_host_into_network(device_id,
-                                            host_id,
-                                            port_id,
-                                            net_id,
-                                            tenant_id,
-                                            segments,
-                                            port_name)
-        elif device_owner == n_const.DEVICE_OWNER_DVR_INTERFACE:
-            self.plug_distributed_router_port_into_network(device_id,
-                                                           host_id,
-                                                           port_id,
-                                                           net_id,
-                                                           tenant_id,
-                                                           segments)
-
-    def unplug_port_from_network(self, device_id, device_owner, hostname,
-                                 port_id, network_id, tenant_id, sg, vnic_type,
-                                 switch_bindings=None, segments=None):
-        if device_owner == n_const.DEVICE_OWNER_DHCP:
-            self.unplug_dhcp_port_from_network(device_id,
-                                               hostname,
-                                               port_id,
-                                               network_id,
-                                               tenant_id)
-        elif (device_owner.startswith('compute') or
-              device_owner.startswith('baremetal')):
-            if vnic_type == 'baremetal':
-                self.unplug_baremetal_from_network(device_id,
-                                                   hostname,
-                                                   port_id,
-                                                   network_id,
-                                                   tenant_id,
-                                                   sg,
-                                                   vnic_type,
-                                                   switch_bindings)
-            else:
-                self.unplug_host_from_network(device_id,
-                                              hostname,
-                                              port_id,
-                                              network_id,
-                                              tenant_id)
-        elif device_owner == n_const.DEVICE_OWNER_DVR_INTERFACE:
-            self.unplug_distributed_router_port_from_network(device_id,
-                                                             port_id,
-                                                             hostname,
-                                                             tenant_id)
-
-    def plug_host_into_network(self, vm_id, host, port_id,
-                               network_id, tenant_id, segments, port_name):
-        cmds = ['tenant %s' % tenant_id,
-                'vm id %s hostid %s' % (vm_id, host)]
-        if port_name:
-            cmds.append('port id %s name "%s" network-id %s' %
-                        (port_id, port_name, network_id))
-        else:
-            cmds.append('port id %s network-id %s' %
-                        (port_id, network_id))
-        cmds.extend(
-            'segment level %d id %s' % (level, segment['id'])
-            for level, segment in enumerate(segments))
-        self._run_openstack_cmds(cmds)
-
-    def plug_baremetal_into_network(self, vm_id, host, port_id,
-                                    network_id, tenant_id, segments, port_name,
-                                    sg=None, orig_sg=None,
-                                    vnic_type=None, switch_bindings=None,
-                                    vlan_type='native'):
-        # Basic error checking for baremental deployments
-        # notice that the following method throws and exception
-        # if an error condition exists
-        self._baremetal_support_check(vnic_type)
-
-        # For baremetal, add host to the topology
-        if switch_bindings and vnic_type == portbindings.VNIC_BAREMETAL:
-            cmds = ['tenant %s' % tenant_id]
-            cmds.append('instance id %s hostid %s type baremetal' %
-                        (vm_id, host))
-            # This list keeps track of any ACLs that need to be rolled back
-            # in case we hit a failure trying to apply ACLs, and we end
-            # failing the transaction.
-            for binding in switch_bindings:
-                if not binding:
-                    # skip all empty entries
-                    continue
-                # Ensure that binding contains switch and port ID info
-                if binding['switch_id'] and binding['port_id']:
-                    if port_name:
-                        cmds.append('port id %s name "%s" network-id %s '
-                                    'type %s switch-id %s switchport %s' %
-                                    (port_id, port_name, network_id, vlan_type,
-                                     binding['switch_id'], binding['port_id']))
-                    else:
-                        cmds.append('port id %s network-id %s type %s '
-                                    'switch-id %s switchport %s' %
-                                    (port_id, network_id, vlan_type,
-                                     binding['switch_id'], binding['port_id']))
-                    cmds.extend('segment level %d id %s' % (level,
-                                                            segment['id'])
-                                for level, segment in enumerate(segments))
-                else:
-                    msg = _('switch and port ID not specified for baremetal')
-                    LOG.error(msg)
-                    raise arista_exc.AristaConfigError(msg=msg)
-            cmds.append('exit')
-            self._run_openstack_cmds(cmds)
-
-            if sg:
-                self.apply_security_group(sg, switch_bindings)
-            else:
-                # Security group was removed. Clean up the existing security
-                # groups.
-                if orig_sg:
-                    self.remove_security_group(orig_sg, switch_bindings)
-
-    def plug_dhcp_port_into_network(self, dhcp_id, host, port_id,
-                                    network_id, tenant_id, segments,
-                                    port_name):
-        cmds = ['tenant %s' % tenant_id,
-                'network id %s' % network_id]
-        if port_name:
-            cmds.append('dhcp id %s hostid %s port-id %s name "%s"' %
-                        (dhcp_id, host, port_id, port_name))
-        else:
-            cmds.append('dhcp id %s hostid %s port-id %s' %
-                        (dhcp_id, host, port_id))
-        cmds.extend('segment level %d id %s' % (level, segment['id'])
-                    for level, segment in enumerate(segments))
-        self._run_openstack_cmds(cmds)
-
-    def plug_distributed_router_port_into_network(self, router_id, host,
-                                                  port_id, net_id, tenant_id,
-                                                  segments):
-        cmds = ['tenant %s' % tenant_id,
-                'instance id %s type router' % router_id,
-                'port id %s network-id %s hostid %s' % (port_id, net_id, host)]
-        cmds.extend('segment level %d id %s' % (level, segment['id'])
-                    for level, segment in enumerate(segments))
-        self._run_openstack_cmds(cmds)
-
-    def unplug_host_from_network(self, vm_id, host, port_id,
-                                 network_id, tenant_id):
-        cmds = ['tenant %s' % tenant_id,
-                'vm id %s hostid %s' % (vm_id, host),
-                'no port id %s' % port_id,
-                ]
-        self._run_openstack_cmds(cmds)
-
-    def unplug_baremetal_from_network(self, vm_id, host, port_id,
-                                      network_id, tenant_id, sg, vnic_type,
-                                      switch_bindings=None):
-        # Basic error checking for baremental deployments
-        # notice that the following method throws and exception
-        # if an error condition exists
-        self._baremetal_support_check(vnic_type)
-
-        # Following is a temporary code for native VLANs - should be removed
-        cmds = ['tenant %s' % tenant_id]
-        cmds.append('instance id %s hostid %s type baremetal' % (vm_id, host))
-        cmds.append('no port id %s' % port_id)
-        self._run_openstack_cmds(cmds)
-
-        # SG -  Remove security group rules from the port
-        # after deleting the instance
-        for binding in switch_bindings:
-            if not binding:
-                continue
-            self.security_group_driver.remove_acl(sg, binding['switch_id'],
-                                                  binding['port_id'],
-                                                  binding['switch_info'])
-
-    def unplug_dhcp_port_from_network(self, dhcp_id, host, port_id,
-                                      network_id, tenant_id):
-        cmds = ['tenant %s' % tenant_id,
-                'network id %s' % network_id,
-                'no dhcp id %s port-id %s' % (dhcp_id, port_id),
-                ]
-        self._run_openstack_cmds(cmds)
-
-    def unplug_distributed_router_port_from_network(self, router_id,
-                                                    port_id, host, tenant_id):
-        # When the last router port is removed, the router is deleted from EOS.
-        cmds = ['tenant %s' % tenant_id,
-                'instance id %s type router' % router_id,
-                'no port id %s hostid %s' % (port_id, host)]
-        self._run_openstack_cmds(cmds)
-
-    def create_network_bulk(self, tenant_id, network_list, sync=False):
-        cmds = ['tenant %s' % tenant_id]
-        # Create a reference to function to avoid name lookups in the loop
-        append_cmd = cmds.append
-        for counter, network in enumerate(network_list, 1):
-            try:
-                append_cmd('network id %s name "%s"' %
-                           (network['network_id'], network['network_name']))
-            except KeyError:
-                append_cmd('network id %s' % network['network_id'])
-
-            cmds.extend(
-                'segment %s type %s id %d %s' % (
-                    seg['id'],
-                    seg['network_type'], seg['segmentation_id'],
-                    ('dynamic' if seg.get('is_dynamic', False) else 'static'))
-                for seg in network['segments']
-                if seg['network_type'] != const.NETWORK_TYPE_FLAT
-            )
-            shared_cmd = 'shared' if network['shared'] else 'no shared'
-            append_cmd(shared_cmd)
-            if self._heartbeat_required(sync, counter):
-                append_cmd(self.cli_commands[CMD_SYNC_HEARTBEAT])
-
-        if self._heartbeat_required(sync):
-            append_cmd(self.cli_commands[CMD_SYNC_HEARTBEAT])
-
-        self._run_openstack_cmds(cmds, sync=sync)
-
-    def create_network_segments(self, tenant_id, network_id,
-                                network_name, segments):
-        if segments:
-            cmds = ['tenant %s' % tenant_id,
-                    'network id %s name "%s"' % (network_id, network_name)]
-            cmds.extend(
-                'segment %s type %s id %d %s' % (
-                    seg['id'], seg['network_type'], seg['segmentation_id'],
-                    ('dynamic' if seg.get('is_dynamic', False) else 'static'))
-                for seg in segments)
-            self._run_openstack_cmds(cmds)
-
-    def delete_network_segments(self, tenant_id, segments):
-        cmds = ['tenant %s' % tenant_id]
-        for segment in segments:
-            cmds.append('network id %s' % segment['network_id'])
-            cmds.append('no segment %s' % segment['id'])
-
-        self._run_openstack_cmds(cmds)
-
-    def delete_network_bulk(self, tenant_id, network_id_list, sync=False):
-        cmds = ['tenant %s' % tenant_id]
-        for counter, network_id in enumerate(network_id_list, 1):
-            cmds.append('no network id %s' % network_id)
-            if self._heartbeat_required(sync, counter):
-                cmds.append(self.cli_commands[CMD_SYNC_HEARTBEAT])
-
-        if self._heartbeat_required(sync):
-            cmds.append(self.cli_commands[CMD_SYNC_HEARTBEAT])
-        self._run_openstack_cmds(cmds, sync=sync)
-
-    def delete_vm_bulk(self, tenant_id, vm_id_list, sync=False):
-        cmds = ['tenant %s' % tenant_id]
-        counter = 0
-        for vm_id in vm_id_list:
-            counter += 1
-            cmds.append('no vm id %s' % vm_id)
-            if self._heartbeat_required(sync, counter):
-                cmds.append(self.cli_commands[CMD_SYNC_HEARTBEAT])
-
-        if self._heartbeat_required(sync):
-            cmds.append(self.cli_commands[CMD_SYNC_HEARTBEAT])
-        self._run_openstack_cmds(cmds, sync=sync)
-
-    def delete_instance_bulk(self, tenant_id, instance_id_list, instance_type,
-                             sync=False):
-        cmds = ['tenant %s' % tenant_id]
-        counter = 0
-        for instance in instance_id_list:
-            counter += 1
-            cmds.append('no instance id %s' % instance)
-            if self._heartbeat_required(sync, counter):
-                cmds.append(self.cli_commands[CMD_SYNC_HEARTBEAT])
-
-        if self._heartbeat_required(sync):
-            cmds.append(self.cli_commands[CMD_SYNC_HEARTBEAT])
-        self._run_openstack_cmds(cmds, sync=sync)
-
-    def create_instance_bulk(self, context, tenant_id, neutron_ports, vms,
-                             port_profiles, sync=False):
-        cmds = ['tenant %s' % tenant_id]
-        # Create a reference to function to avoid name lookups in the loop
-        append_cmd = cmds.append
-        counter = 0
-        for vm in vms.values():
-            counter += 1
-
-            for v_port in vm['ports']:
-                port_id = v_port['portId']
-                if not v_port['hosts']:
-                    # Skip all the ports that have no host associsted with them
-                    continue
-
-                if port_id not in neutron_ports.keys():
-                    continue
-                neutron_port = neutron_ports[port_id]
-
-                port_name = ''
-                if 'name' in neutron_port:
-                    port_name = 'name "%s"' % neutron_port['name']
-
-                device_owner = neutron_port['device_owner']
-                vnic_type = port_profiles[port_id]['vnic_type']
-                network_id = neutron_port['network_id']
-                segments = []
-
-                if device_owner != n_const.DEVICE_OWNER_DVR_INTERFACE:
-                    filters = {'port_id': port_id,
-                               'host': v_port['hosts'][0]}
-                    segments = db_lib.get_port_binding_level(context, filters)
-
-                if device_owner == n_const.DEVICE_OWNER_DHCP:
-                    append_cmd('network id %s' % neutron_port['network_id'])
-                    append_cmd('dhcp id %s hostid %s port-id %s %s' %
-                               (vm['vmId'], v_port['hosts'][0],
-                                neutron_port['id'], port_name))
-                    cmds.extend('segment level %d id %s' % (
-                        segment.level, segment.segment_id)
-                                for segment in segments)
-                elif (device_owner.startswith('compute') or
-                      device_owner.startswith('baremetal')):
-                    if vnic_type == 'baremetal':
-                        append_cmd('instance id %s hostid %s type baremetal' %
-                                   (vm['vmId'], v_port['hosts'][0]))
-                        profile = port_profiles[neutron_port['id']]
-                        profile = json.loads(profile['profile'])
-                        vlan_type = profile.get('vlan_type', 'native')
-                        for binding in profile.get('local_link_information',
-                                                   []):
-                            if not binding or not isinstance(profile, dict):
-                                # skip all empty entries
-                                continue
-                        # Ensure that profile contains switch and port ID info
-                        if binding['switch_id'] and binding['port_id']:
-                            if port_name:
-                                cmds.append('port id %s name "%s" '
-                                            'network-id %s type %s '
-                                            'switch-id %s switchport %s' %
-                                            (port_id, port_name, network_id,
-                                             vlan_type, binding['switch_id'],
-                                             binding['port_id']))
-                            else:
-                                cmds.append('port id %s network-id %s '
-                                            'type %s '
-                                            'switch-id %s switchport %s' %
-                                            (port_id, network_id, vlan_type,
-                                             binding['switch_id'],
-                                             binding['port_id']))
-                            cmds.extend('segment level %d id %s' % (
-                                segment.level, segment.segment_id)
-                                        for segment in segments)
-                    else:
-                        append_cmd('vm id %s hostid %s' % (vm['vmId'],
-                                                           v_port['hosts'][0]))
-                        append_cmd('port id %s %s network-id %s' %
-                                   (neutron_port['id'], port_name,
-                                    neutron_port['network_id']))
-                        cmds.extend('segment level %d id %s' % (
-                            segment.level, segment.segment_id)
-                            for segment in segments)
-                elif device_owner == n_const.DEVICE_OWNER_DVR_INTERFACE:
-                    append_cmd('instance id %s type router' % (
-                        neutron_port['device_id']))
-                    for host in v_port['hosts']:
-                        append_cmd('port id %s network-id %s hostid %s' % (
-                            neutron_port['id'],
-                            neutron_port['network_id'], host))
-                        cmds.extend('segment level %d id %s' % (
-                            segment.level, segment.segment_id)
-                            for segment in segments)
-                else:
-                    LOG.warning(_LW("Unknown device owner: %s"),
-                                neutron_port['device_owner'])
-
-                if self._heartbeat_required(sync, counter):
-                    append_cmd(self.cli_commands[CMD_SYNC_HEARTBEAT])
-
-        if self._heartbeat_required(sync):
-            append_cmd(self.cli_commands[CMD_SYNC_HEARTBEAT])
-
-        self._run_openstack_cmds(cmds, sync=sync)
-
-    def delete_tenant_bulk(self, tenant_list, sync=False):
-        cmds = []
-        for tenant in tenant_list:
-            cmds.append('no tenant %s' % tenant)
-        if self._heartbeat_required(sync):
-            cmds.append(self.cli_commands[CMD_SYNC_HEARTBEAT])
-        self._run_openstack_cmds(cmds, sync=sync)
-
-    def delete_this_region(self):
-        cmds = ['enable',
-                'configure',
-                'cvx',
-                'service openstack',
-                'no region %s' % self.region,
-                ]
-        self._run_eos_cmds(cmds)
-
-    def register_with_eos(self, sync=False):
-        cmds = []
-        sync_interval_cmd = 'sync interval %d' % self.sync_interval
-        cmds.append(sync_interval_cmd)
-
-        self._run_openstack_cmds(cmds, sync=sync)
-
-    def get_region_updated_time(self):
-        timestamp_cmd = self.cli_commands['timestamp']
-        if timestamp_cmd:
-            try:
-                return self._run_eos_cmds(commands=timestamp_cmd)[0]
-            except IndexError:
-                # EAPI request failed and so return none
-                msg = "Failed to get last sync timestamp; trigger full sync"
-                LOG.info(msg)
-                return None
-
-    def _check_sync_lock(self, client):
-        """Check if the lock is owned by this client.
-        :param client: Returns true only if the lock owner matches the expected
-                       client.
-        """
-        cmds = ['show sync lock']
-        ret = self._run_openstack_cmds(cmds, sync=True)
-        for r in ret:
-            if 'owner' in r:
-                lock_owner = r['owner']
-                LOG.info(_LI('Lock requested by: %s'), client)
-                LOG.info(_LI('Lock owner: %s'), lock_owner)
-                return lock_owner == client
-        return False
-
-    def _sync_supported(self):
-        return True
-
-    def sync_start(self):
-        try:
-            cmds = []
-            if self._sync_supported():
-                # Locking the region during sync is supported.
-                client_id = cfg.CONF.host('.')[0]
-                request_id = self._get_random_name()
-                cmds = ['sync lock %s %s' % (client_id, request_id)]
-                self._run_openstack_cmds(cmds)
-                # Check whether the lock was acquired.
-                return self._check_sync_lock(client_id)
-            else:
-                cmds = ['sync start']
-                self._run_openstack_cmds(cmds)
-            return True
-        except arista_exc.AristaRpcError:
-            return False
-
-    def sync_end(self):
-        try:
-            # 'sync end' can be sent only when the region has been entered in
-            # the sync mode
-            self._run_openstack_cmds(['sync end'], sync=True)
-            return True
-        except arista_exc.AristaRpcError:
-            return False
+            regions = command_output[0]['physicalNetwork']
+            if self.region in regions.keys():
+                return regions[self.region]['vlanPool']['default']
+        return {'assignedVlans': '',
+                'availableVlans': '',
+                'allocatedVlans': ''}
 
     def _run_eos_cmds(self, commands, commands_to_log=None):
         """Execute/sends a CAPI (Command API) command to EOS.
+
         In this method, list of commands is appended with prefix and
         postfix commands - to make is understandble by EOS.
+
         :param commands : List of command to be executed on EOS.
         :param commands_to_log : This should be set to the command that is
                                  logged. If it is None, then the commands
@@ -717,8 +212,10 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
 
     def _build_command(self, cmds, sync=False):
         """Build full EOS's openstack CLI command.
+
         Helper method to add commands to enter and exit from openstack
         CLI modes.
+
         :param cmds: The openstack CLI commands that need to be executed
                      in the openstack config mode.
         :param sync: This flags indicates that the region is being synced.
@@ -740,8 +237,10 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
 
     def _run_openstack_cmds(self, commands, commands_to_log=None, sync=False):
         """Execute/sends a CAPI (Command API) command to EOS.
+
         In this method, list of commands is appended with prefix and
         postfix commands - to make is understandble by EOS.
+
         :param commands : List of command to be executed on EOS.
         :param commands_to_logs : This should be set to the command that is
                                   logged. If it is None, then the commands
@@ -785,11 +284,11 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                  host))
 
     def get_physical_network(self, host_id, context=None):
-        """Returns dirctionary which contains physical topology information
+        """Returns dictionary which contains physical topology information
+
         for a given host_id
         """
         fqdns_used = cfg.CONF.ml2_arista['use_fqdn']
-        hostname = None
         physnet = None
         switch_id = None
         mac_to_hostname = {}
@@ -802,20 +301,20 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
             neighbors = response[0]['neighbors']
             for neighbor in neighbors:
                 if host_id in neighbor:
-                    hostname = neighbors[neighbor]['toPort'][0]['hostname']
-                    physnet = hostname if fqdns_used else (
-                        hostname.split('.')[0])
+                    switchname = neighbors[neighbor]['toPort'][0]['hostname']
+                    physnet = switchname if fqdns_used else (
+                        switchname.split('.')[0])
+                    switch_id = neighbors[neighbor]['toPort'][0].get('hostid')
+                    if not switch_id:
+                        switch_id = response[1]['hosts'][switchname]['name']
                     break
-            # Get response for 'show network physical-topology hosts' command
-            if hostname:
-                switch_id = response[1]['hosts'][hostname]['name']
 
             # Check if the switch is part of an MLAG pair, and lookup the
             # pair's physnet name if so
             physnet = self.mlag_pairs.get(physnet, physnet)
 
-            for k in response[1]['hosts']:
-                mac_to_hostname[response[1]['hosts'][k]['name']] = k
+            for host in response[1]['hosts'].values():
+                mac_to_hostname[host['name']] = host['hostname']
 
             res = {'physnet': physnet,
                    'switch_id': switch_id,

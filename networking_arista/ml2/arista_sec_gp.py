@@ -22,7 +22,6 @@ import socket
 from collections import defaultdict
 from eventlet.greenpool import GreenPool as Pool
 from eventlet.semaphore import Semaphore as Lock
-from eventlet import sleep
 from hashlib import sha1
 from httplib import HTTPException
 import requests
@@ -127,19 +126,24 @@ class AristaSwitchRPCMixin(object):
 
     @staticmethod
     def _make_session(max_pools=10, max_connections=1,
-                      pool_block=True, max_retries=2):
+                      pool_block=True, max_retries=5):
         s = requests.session()
         s.headers['Content-Type'] = 'application/json'
         s.headers['Accept'] = 'application/json'
         s.verify = False
+        retry = requests.packages.urllib3.util.retry.Retry(
+            total=max_retries,
+            method_whitelist=False,
+            backoff_factor=0.3,
+        )
         s.mount('https://', requests.adapters.HTTPAdapter(
-            max_retries=max_retries,
+            max_retries=retry,
             pool_connections=max_pools,
             pool_maxsize=max_connections,
             pool_block=pool_block,
         ))
         s.mount('http://', requests.adapters.HTTPAdapter(
-            max_retries=max_retries,
+            max_retries=retry,
             pool_connections=max_pools,
             pool_maxsize=max_connections,
             pool_block=pool_block,
@@ -239,20 +243,16 @@ class AristaSwitchRPCMixin(object):
             switch_pass = ''
         eapi_server_url = ('https://%s:%s@%s/command-api' %
                            (switch_user, switch_pass, switch_ip))
-        for _ in six.moves.range(3):
-            try:
-                def server(cmds):
-                    return self._send_eapi_req(eapi_server_url, cmds)
-                ret = server(['show lldp local-info management 1'])
-                if not ret:
-                    sleep(1)
-                system_id = EUI(ret[0]['chassisId'])
-                self.__server_by_id[system_id] = server
-                self.__server_by_ip[switch_ip] = server
-                break
-            except (socket.error, HTTPException) as e:
-                LOG.warn("Could not connect to server %s due to %s",
-                         switch_ip, e)
+        try:
+            def server(cmds):
+                return self._send_eapi_req(eapi_server_url, cmds)
+            ret = server(['show lldp local-info management 1'])[0]
+            system_id = EUI(ret['chassisId'])
+            self.__server_by_id[system_id] = server
+            self.__server_by_ip[switch_ip] = server
+        except (socket.error, HTTPException) as e:
+            LOG.warn("Could not connect to server %s due to %s",
+                     switch_ip, e)
 
     @property
     def _server_by_id(self):

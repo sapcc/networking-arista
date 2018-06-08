@@ -13,15 +13,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from oslo_config import cfg
 import requests
 
+cfg.CONF.import_group('ml2_arista', 'networking_arista.common.config')
 
-def make_http_session(max_pools=16, max_connections=1,
-                      pool_block=True, max_retries=5):
+
+def make_http_session():
     s = requests.session()
+    max_connections = cfg.CONF.ml2_arista.max_connections
+    max_pools = cfg.CONF.ml2_arista.max_pools
+    max_retries = cfg.CONF.ml2_arista.max_retries
+    pool_block = cfg.CONF.ml2_arista.http_pool_block
+
     s.headers['Content-Type'] = 'application/json'
     s.headers['Accept'] = 'application/json'
-    s.verify = False
+    s.verify = cfg.CONF.ml2_arista.verify_ssl
     retry = requests.packages.urllib3.util.retry.Retry(
         total=max_retries,
         method_whitelist=False,  # Most RPC Calls are POST, and idempotent

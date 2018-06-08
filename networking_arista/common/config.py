@@ -62,6 +62,25 @@ ARISTA_DRIVER_OPTS = [
                       'defines how long an EAPI request from the driver to '
                       'EOS waits before timing out. If not set, a value of 10 '
                       'seconds is assumed.')),
+    cfg.IntOpt('max_connections',
+               default=10,
+               help=_('Maximum number of parallel connections each worker '
+                      'should open')),
+    cfg.IntOpt('max_pools',
+               default=10,
+               help=_('Maximum number of http-pools each worker should have')),
+    cfg.IntOpt('max_retries',
+               default=5,
+               help=_('Maximum number of retries for each http-request')),
+    cfg.BoolOpt('http_pool_block',
+                default=False,
+                help=_('Should the worker block on if the max_connections '
+                       'connections for the server has been reached')
+                ),
+    cfg.BoolOpt('verify_ssl',
+                default=False,
+                help=_('Should certificates of ssl connections be verified')
+                ),
     cfg.StrOpt('region_name',
                default='RegionOne',
                help=_('Defines Region Name that is assigned to this OpenStack '
@@ -69,7 +88,7 @@ ARISTA_DRIVER_OPTS = [
                       'OpenStack/Neutron controllers are managing the same '
                       'Arista HW clusters. Note that this name must match '
                       'with the region name registered (or known) to keystone '
-                      'service. Authentication with Keysotne is performed by '
+                      'service. Authentication with Keystone is performed by '
                       'EOS. This is optional. If not set, a value of '
                       '"RegionOne" is assumed.')),
     cfg.BoolOpt('sec_group_support',
@@ -92,7 +111,7 @@ ARISTA_DRIVER_OPTS = [
                        '"True"')),
     cfg.StrOpt('api_type',
                default='EAPI',
-               help=_('Tells the plugin to use a sepcific API interfaces '
+               help=_('Tells the plugin to use a specific API interfaces '
                       'to communicate with CVX. Valid options are:'
                       'EAPI - Use EOS\' external API.'
                       'JSON - Use EOS\' JSON/REST API.')),

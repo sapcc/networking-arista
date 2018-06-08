@@ -246,10 +246,14 @@ class AristaSwitchRPCMixin(object):
         try:
             def server(cmds):
                 return self._send_eapi_req(eapi_server_url, cmds)
-            ret = server(['show lldp local-info management 1'])[0]
-            system_id = EUI(ret['chassisId'])
-            self.__server_by_id[system_id] = server
-            self.__server_by_ip[switch_ip] = server
+            ret = server(['show lldp local-info management 1'])
+            if not ret:
+                LOG.warn("Could not connect to server %s",
+                         switch_ip)
+            else:
+                system_id = EUI(ret[0]['chassisId'])
+                self.__server_by_id[system_id] = server
+                self.__server_by_ip[switch_ip] = server
         except (socket.error, HTTPException) as e:
             LOG.warn("Could not connect to server %s due to %s",
                      switch_ip, e)

@@ -81,6 +81,10 @@ ARISTA_DRIVER_OPTS = [
                 default=False,
                 help=_('Should certificates of ssl connections be verified')
                 ),
+    cfg.BoolOpt('http_connection_close',
+                default=True,
+                help=_('Should connections be closed, and not re-used')
+                ),
     cfg.StrOpt('region_name',
                default='RegionOne',
                help=_('Defines Region Name that is assigned to this OpenStack '

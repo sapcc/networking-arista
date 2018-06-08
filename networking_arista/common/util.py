@@ -28,6 +28,9 @@ def make_http_session():
 
     s.headers['Content-Type'] = 'application/json'
     s.headers['Accept'] = 'application/json'
+    if cfg.CONF.ml2_arista.http_connection_close:
+        s.headers['Connection'] = 'close'
+
     s.verify = cfg.CONF.ml2_arista.verify_ssl
     retry = requests.packages.urllib3.util.retry.Retry(
         total=max_retries,

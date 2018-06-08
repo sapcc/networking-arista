@@ -37,6 +37,7 @@ from networking_arista.common import config  # noqa
 from networking_arista.common import db
 from networking_arista.common import db_lib
 from networking_arista.common import exceptions as arista_exc
+from networking_arista.common import util
 from networking_arista.ml2 import arista_ml2
 from networking_arista.ml2 import sec_group_callback
 
@@ -85,16 +86,21 @@ class AristaDriver(driver_api.MechanismDriver):
             self.rpc = rpc
             self.eapi = rpc
         else:
-            self.eapi = arista_ml2.AristaRPCWrapperEapi(self.ndb)
+            http_session = util.make_http_session()
+            self.eapi = arista_ml2.AristaRPCWrapperEapi(
+                self.ndb, http_session=http_session)
             api_type = confg['api_type'].upper()
             if api_type == 'EAPI':
                 LOG.info("Using EAPI for RPC")
-                self.rpc = arista_ml2.AristaRPCWrapperEapi(self.ndb)
+                self.rpc = arista_ml2.AristaRPCWrapperEapi(
+                    self.ndb, http_session=http_session)
             elif api_type == 'JSON':
                 LOG.info("Using JSON for RPC")
-                self.rpc = arista_ml2.AristaRPCWrapperJSON(self.ndb)
+                self.rpc = arista_ml2.AristaRPCWrapperJSON(
+                    self.ndb, http_session=http_session)
             elif api_type == 'NOCVX':
-                self.rpc = arista_ml2.AristaNoCvxWrapperBase(self.ndb)
+                self.rpc = arista_ml2.AristaRPCWrapperNoCvx(
+                    self.ndb, http_session=http_session)
                 self.eapi = self.rpc
             else:
                 msg = "RPC mechanism %s not recognized" % api_type
@@ -1126,7 +1132,7 @@ def cli():
         LOG.info("Using JSON for RPC")
         rpc = arista_ml2.AristaRPCWrapperJSON(ndb)
     elif api_type == 'NOCVX':
-        rpc = arista_ml2.AristaNoCvxWrapperBase(ndb)
+        rpc = arista_ml2.AristaRPCWrapperNoCvx(ndb)
     else:
         msg = "RPC mechanism %s not recognized" % api_type
         LOG.error(msg)

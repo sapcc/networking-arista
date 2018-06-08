@@ -38,6 +38,7 @@ from oslo_utils.importutils import try_import
 from networking_arista._i18n import _
 from networking_arista.common import db_lib
 from networking_arista.common import exceptions as arista_exc
+from networking_arista.common import util
 
 dogstatsd = try_import('datadog.dogstatsd')
 
@@ -120,36 +121,9 @@ class AristaSwitchRPCMixin(object):
         super(AristaSwitchRPCMixin, self).__init__()
         self._lock = Lock()
         self.conn_timeout = (5, 60)
-        self._session = self._make_session()
+        self._session = kwargs.get('session') or util.make_http_session()
         self.__server_by_id = dict()
         self.__server_by_ip = dict()
-
-    @staticmethod
-    def _make_session(max_pools=10, max_connections=1,
-                      pool_block=True, max_retries=5):
-        s = requests.session()
-        s.headers['Content-Type'] = 'application/json'
-        s.headers['Accept'] = 'application/json'
-        s.verify = False
-        retry = requests.packages.urllib3.util.retry.Retry(
-            total=max_retries,
-            method_whitelist=False,
-            backoff_factor=0.3,
-        )
-        s.mount('https://', requests.adapters.HTTPAdapter(
-            max_retries=retry,
-            pool_connections=max_pools,
-            pool_maxsize=max_connections,
-            pool_block=pool_block,
-        ))
-        s.mount('http://', requests.adapters.HTTPAdapter(
-            max_retries=retry,
-            pool_connections=max_pools,
-            pool_maxsize=max_connections,
-            pool_block=pool_block,
-        ))
-
-        return s
 
     def _send_eapi_req(self, url, cmds):
         # This method handles all EAPI requests (using the requests library)
@@ -283,8 +257,9 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
     Command API - JSON RPC API provided by Arista EOS
     """
 
-    def __init__(self, neutron_db):
-        super(AristaSecGroupSwitchDriver, self).__init__()
+    def __init__(self, neutron_db, http_session=None):
+        super(AristaSecGroupSwitchDriver, self).__init__(
+            http_session=http_session)
         self._ndb = neutron_db
         self.sg_enabled = cfg.CONF.ml2_arista.get('sec_group_support')
         if not self.sg_enabled:

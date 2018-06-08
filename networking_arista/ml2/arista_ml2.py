@@ -34,6 +34,7 @@ from six import add_metaclass
 from networking_arista._i18n import _, _LI, _LW, _LE
 from networking_arista.common import db_lib
 from networking_arista.common import exceptions as arista_exc
+from networking_arista.common import util
 from networking_arista.ml2 import arista_sec_gp
 
 LOG = logging.getLogger(__name__)
@@ -77,7 +78,7 @@ class AristaRPCWrapperBase(object):
     Command API - JSON RPC API provided by Arista EOS
     """
 
-    def __init__(self, neutron_db):
+    def __init__(self, neutron_db, http_session=None):
         super(AristaRPCWrapperBase, self).__init__()
         self._ndb = neutron_db
         self._validate_config()
@@ -87,15 +88,15 @@ class AristaRPCWrapperBase(object):
         self.conn_timeout = cfg.CONF.ml2_arista.conn_timeout
         self.eapi_hosts = cfg.CONF.ml2_arista.eapi_host.split(',')
         self.security_group_driver = arista_sec_gp.AristaSecGroupSwitchDriver(
-            self._ndb)
+            self._ndb, http_session=http_session)
 
         # We denote mlag_pair physnets as peer1_peer2 in the physnet name, the
         # following builds a mapping of peer name to physnet name for use
         # during port binding
         self.mlag_pairs = {}
-        session = db_api.get_session()
-        with session.begin():
-            physnets = session.query(
+        db_session = db_api.get_session()
+        with db_session.begin():
+            physnets = db_session.query(
                 type_vlan.VlanAllocation.physical_network).distinct().all()
         for (physnet,) in physnets:
             if '_' in physnet:
@@ -494,9 +495,12 @@ class AristaRPCWrapperBase(object):
 
 
 class AristaRPCWrapperJSON(AristaRPCWrapperBase):
-    def __init__(self, ndb):
-        super(AristaRPCWrapperJSON, self).__init__(ndb)
+    def __init__(self, ndb, http_session=None):
+        http_session = http_session or util.make_http_session()
+        super(AristaRPCWrapperJSON, self).__init__(ndb,
+                                                   http_session=http_session)
         self.current_sync_name = None
+        self.http_session = http_session or util.make_http_session()
 
     def _get_url(self, host="", user="", password=""):
         return ('https://%s:%s@%s/openstack/api/' %
@@ -527,11 +531,11 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
                     'sync': self.current_sync_name})
             LOG.info(msg)
             func_lookup = {
-                'GET': requests.get,
-                'POST': requests.post,
-                'PUT': requests.put,
-                'PATCH': requests.patch,
-                'DELETE': requests.delete
+                'GET': self.http_session.get,
+                'POST': self.http_session.post,
+                'PUT': self.http_session.put,
+                'PATCH': self.http_session.patch,
+                'DELETE': self.http_session.delete
             }
             func = func_lookup.get(method)
             if not func:
@@ -1138,8 +1142,9 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
 
 
 class AristaRPCWrapperEapi(AristaRPCWrapperBase):
-    def __init__(self, ndb):
+    def __init__(self, ndb, http_session=None):
         super(AristaRPCWrapperEapi, self).__init__(ndb)
+        self.http_session = http_session or util.make_http_session()
         # The cli_commands dict stores the mapping between the CLI command key
         # and the actual CLI command.
         self.cli_commands = {
@@ -1188,8 +1193,9 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
             msg = ('EAPI request to %(ip)s contains %(cmd)s' %
                    {'ip': self._server_ip, 'cmd': json.dumps(log_data)})
             # LOG.debug(msg)
-            response = requests.post(url, timeout=self.conn_timeout,
-                                     verify=False, data=json.dumps(data))
+            response = self.http_session.post(
+                url, timeout=self.conn_timeout,
+                verify=False, data=json.dumps(data))
             # LOG.debug('EAPI response contains: %s' % response.json())
             try:
                 return response.json()['result']
@@ -2258,13 +2264,14 @@ class SyncService(object):
                              'network_id': port['network_id']}}
 
 
-class AristaNoCvxWrapperBase(AristaRPCWrapperBase,
-                             arista_sec_gp.AristaSwitchRPCMixin):
+class AristaRPCWrapperNoCvx(AristaRPCWrapperBase,
+                            arista_sec_gp.AristaSwitchRPCMixin):
     """Wraps Arista Direct Communication.
     """
 
-    def __init__(self, neutron_db=None):
-        super(AristaNoCvxWrapperBase, self).__init__(neutron_db)
+    def __init__(self, neutron_db=None, http_session=None):
+        super(AristaRPCWrapperNoCvx, self).__init__(neutron_db,
+                                                    http_session=http_session)
         arista_sec_gp.AristaSwitchRPCMixin._validate_config(
             self, _('when "api_type" is "nocvx"')
         )

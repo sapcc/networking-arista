@@ -85,6 +85,9 @@ ARISTA_DRIVER_OPTS = [
                 default=True,
                 help=_('Should connections be closed, and not re-used')
                 ),
+    cfg.BoolOpt('skip_unplug',
+                default=True,
+                help=_('Should the unplug operation be skipped')),
     cfg.StrOpt('region_name',
                default='RegionOne',
                help=_('Defines Region Name that is assigned to this OpenStack '

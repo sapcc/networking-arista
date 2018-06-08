@@ -858,16 +858,13 @@ class AristaDriver(driver_api.MechanismDriver):
             return
 
         try:
-            if not self._network_provisioned(context, tenant_id, network_id):
-                # If we do not have network associated with this, ignore it
-                return
-            hostname = self._host_name(host)
-            self.rpc.unplug_port_from_network(device_id, device_owner,
-                                              hostname, port_id, network_id,
-                                              tenant_id, sg, vnic_type,
-                                              switch_bindings=switch_bindings,
-                                              segments=segments)
-            self.rpc.remove_security_group(sg, switch_bindings)
+            if not cfg.CONF.ml2_arista.skip_unplug:
+                hostname = self._host_name(host)
+                self.rpc.unplug_port_from_network(
+                    device_id, device_owner, hostname, port_id, network_id,
+                    tenant_id, sg, vnic_type, switch_bindings=switch_bindings,
+                    segments=segments)
+                self.rpc.remove_security_group(sg, switch_bindings)
 
             # if necessary, delete tenant as well.
             self.delete_tenant(context, tenant_id)

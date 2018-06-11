@@ -120,7 +120,7 @@ class AristaSwitchRPCMixin(object):
     def __init__(self, *args, **kwargs):
         super(AristaSwitchRPCMixin, self).__init__()
         self._lock = Lock()
-        self.conn_timeout = (5, 60)
+        self.conn_timeout = cfg.CONF.ml2_arista.conn_timeout
         self._session = kwargs.get('session') or util.make_http_session()
         self.__server_by_id = dict()
         self.__server_by_ip = dict()
@@ -158,19 +158,20 @@ class AristaSwitchRPCMixin(object):
                 msg = "Unexpected EAPI error"
                 LOG.info(msg)
                 raise arista_exc.AristaRpcError(msg=msg)
-        except requests.exceptions.ConnectionError:
-            msg = (_('Error while trying to connect to %(url)s') %
-                   {'url': url})
-            LOG.warning(msg)
-            return None
         except requests.exceptions.ConnectTimeout:
             msg = (_('Timed out while trying to connect to %(url)s') %
                    {'url': url})
             LOG.warning(msg)
             return None
-        except requests.exceptions.Timeout:
-            msg = (_('Timed out during an EAPI request to %(url)s') %
+        except requests.exceptions.ReadTimeout:
+            msg = (_('Timed out while reading from %(url)s') %
                    {'url': url})
+            LOG.warning(msg)
+            return None
+        except requests.exceptions.ConnectionError as e:
+            msg = (_('Error while trying to connect to %(url)s'
+                     'due to %(reason)s') %
+                   {'url': url, 'reason': e})
             LOG.warning(msg)
             return None
         except requests.exceptions.InvalidURL:

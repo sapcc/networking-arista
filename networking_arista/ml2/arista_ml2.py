@@ -546,9 +546,6 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
                         data=data, headers=request_headers)
             LOG.info(_LI('JSON response contains: %s'), resp.json())
             return resp.json()
-        except requests.exceptions.ConnectionError:
-            msg = (_('Error connecting to %(url)s') % {'url': url})
-            LOG.warning(msg)
         except requests.exceptions.ConnectTimeout:
             msg = (_('Timed out connecting to API request to %(url)s') %
                    {'url': url})
@@ -556,6 +553,10 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
         except requests.exceptions.Timeout:
             msg = (_('Timed out during API request to %(url)s') %
                    {'url': url})
+            LOG.warning(msg)
+        except requests.exceptions.ConnectionError as e:
+            msg = (_('Error connecting to %(url)s due to %(reason)s') %
+                   {'url': url, 'reason': e})
             LOG.warning(msg)
         except requests.exceptions.InvalidURL:
             msg = (_('Ignore attempt to connect to invalid URL %(url)s') %
@@ -1212,11 +1213,6 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                 msg = "Unexpected EAPI error"
                 LOG.info(msg)
                 raise arista_exc.AristaRpcError(msg=msg)
-        except requests.exceptions.ConnectionError:
-            msg = (_('Error while trying to connect to %(ip)s') %
-                   {'ip': self._server_ip})
-            LOG.warning(msg)
-            return None
         except requests.exceptions.ConnectTimeout:
             msg = (_('Timed out while trying to connect to %(ip)s') %
                    {'ip': self._server_ip})
@@ -1224,6 +1220,11 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
             return None
         except requests.exceptions.Timeout:
             msg = (_('Timed out during an EAPI request to %(ip)s') %
+                   {'ip': self._server_ip})
+            LOG.warning(msg)
+            return None
+        except requests.exceptions.ConnectionError:
+            msg = (_('Error while trying to connect to %(ip)s') %
                    {'ip': self._server_ip})
             LOG.warning(msg)
             return None

@@ -120,7 +120,8 @@ class AristaSwitchRPCMixin(object):
     def __init__(self, *args, **kwargs):
         super(AristaSwitchRPCMixin, self).__init__()
         self._lock = Lock()
-        self.conn_timeout = cfg.CONF.ml2_arista.conn_timeout
+        self._conn_timeout = cfg.CONF.ml2_arista.conn_timeout
+        self._verify = cfg.CONF.ml2_arista.verify_ssl
         self._session = kwargs.get('session') or util.make_http_session()
         self.__server_by_id = dict()
         self.__server_by_ip = dict()
@@ -150,7 +151,8 @@ class AristaSwitchRPCMixin(object):
         try:
             response = self._session.post(
                 url,
-                timeout=self.conn_timeout,
+                verify=self._verify,
+                timeout=self._conn_timeout,
                 json=data)
             try:
                 return response.json()['result']

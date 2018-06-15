@@ -117,14 +117,15 @@ acl_cmd = {
 
 
 class AristaSwitchRPCMixin(object):
+    _LOCK = Lock()
+    _SERVER_BY_ID = dict()
+    _SERVER_BY_IP = dict()
+
     def __init__(self, *args, **kwargs):
         super(AristaSwitchRPCMixin, self).__init__()
-        self._lock = Lock()
         self._conn_timeout = cfg.CONF.ml2_arista.conn_timeout
         self._verify = cfg.CONF.ml2_arista.verify_ssl
         self._session = kwargs.get('session') or util.make_http_session()
-        self.__server_by_id = dict()
-        self.__server_by_ip = dict()
 
     def _send_eapi_req(self, url, cmds):
         # This method handles all EAPI requests (using the requests library)
@@ -201,19 +202,19 @@ class AristaSwitchRPCMixin(object):
 
         for s in cfg.CONF.ml2_arista.switch_info:
             switch_ip, switch_user, switch_pass = s.split(":")
-            if switch_ip not in self.__server_by_ip:
+            if switch_ip not in self._SERVER_BY_IP:
                 switches.append((switch_ip, switch_user, switch_pass))
 
         if not switches:
             return
 
-        with self._lock:
+        with self._LOCK:
             pool = Pool()
             for s in pool.starmap(self._connect_to_switch, switches):
                 pass
 
     def _connect_to_switch(self, switch_ip, switch_user, switch_pass):
-        if switch_ip in self.__server_by_ip:
+        if switch_ip in self._SERVER_BY_IP:
             return
 
         if switch_pass == "''":
@@ -223,14 +224,16 @@ class AristaSwitchRPCMixin(object):
         try:
             def server(cmds):
                 return self._send_eapi_req(eapi_server_url, cmds)
+
             ret = server(['show lldp local-info management 1'])
             if not ret:
                 LOG.warn("Could not connect to server %s",
                          switch_ip)
+                return
             else:
                 system_id = EUI(ret[0]['chassisId'])
-                self.__server_by_id[system_id] = server
-                self.__server_by_ip[switch_ip] = server
+                self._SERVER_BY_ID[system_id] = server
+                self._SERVER_BY_IP[switch_ip] = server
         except (socket.error, HTTPException) as e:
             LOG.warn("Could not connect to server %s due to %s",
                      switch_ip, e)
@@ -238,18 +241,18 @@ class AristaSwitchRPCMixin(object):
     @property
     def _server_by_id(self):
         self._maintain_connections()
-        return self.__server_by_id
+        return self._SERVER_BY_ID
 
     @property
     def _server_by_ip(self):
         self._maintain_connections()
-        return self.__server_by_ip
+        return self._SERVER_BY_IP
 
     def _get_server(self, switch_info=None, switch_id=None):
         self._maintain_connections()
 
-        return (self.__server_by_ip.get(switch_info)
-                or self.__server_by_id.get(EUI(switch_id)))
+        return (self._SERVER_BY_IP.get(switch_info)
+                or self._SERVER_BY_ID.get(EUI(switch_id)))
 
 
 class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):

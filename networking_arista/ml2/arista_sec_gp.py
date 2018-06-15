@@ -120,12 +120,36 @@ class AristaSwitchRPCMixin(object):
     _LOCK = Lock()
     _SERVER_BY_ID = dict()
     _SERVER_BY_IP = dict()
+    _INTERFACE_MEMBERSHIP = defaultdict(dict)
 
     def __init__(self, *args, **kwargs):
         super(AristaSwitchRPCMixin, self).__init__()
         self._conn_timeout = cfg.CONF.ml2_arista.conn_timeout
         self._verify = cfg.CONF.ml2_arista.verify_ssl
         self._session = kwargs.get('session') or util.make_http_session()
+
+    def _get_interface_membership(self, server, ports):
+        ifm = self._INTERFACE_MEMBERSHIP[server]
+        missing = []
+        result = dict()
+        for port in ports:
+            if port in ifm:
+                result[port] = ifm[port]
+            else:
+                missing.append(port)
+
+        if not missing:
+            return result
+
+        ret = server(["show interfaces " + ",".join(missing)])[0]
+        for port, v in six.iteritems(ret['interfaces']):
+            pc = None
+            membership = v.get('interfaceMembership')
+            if membership:
+                pc = membership.rsplit(' ')[-1]
+            ifm[port] = pc
+            result[port] = pc
+        return result
 
     def _send_eapi_req(self, url, cmds):
         # This method handles all EAPI requests (using the requests library)
@@ -1103,14 +1127,8 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             if server is None:
                 continue
             try:
-                ret = server(["show interfaces " +
-                          ",".join(port_security_groups.iterkeys())])[0]
-                for k, v in six.iteritems(ret['interfaces']):
-                    pc = None
-                    membership = v.get('interfaceMembership')
-                    if membership:
-                        pc = membership.rsplit(' ')[-1]
-
+                for k, pc in six.iteritems(self._get_interface_membership(
+                        server, port_security_groups.iterkeys())):
                     if pc not in port_security_groups:
                         port_security_groups[pc] = port_security_groups[k]
             except Exception:

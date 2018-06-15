@@ -2311,13 +2311,12 @@ class AristaRPCWrapperNoCvx(AristaRPCWrapperBase,
             port_id = binding['port_id']
             vlan_id = segments[-1]['segmentation_id']
 
-            result = server(["show interfaces " + port_id])[0]
-
             interfaces = [port_id]
-            for k, v in six.iteritems(result['interfaces']):
-                membership = v.get('interfaceMembership')
-                if membership:
-                    interfaces.append(membership.rsplit(' ')[-1])
+
+            for pc in six.itervalues(
+                    self._get_interface_membership(server, [port_id])):
+                if pc:
+                    interfaces.append(pc)
 
             # Setup VLAN
             cmds = [
@@ -2363,13 +2362,11 @@ class AristaRPCWrapperNoCvx(AristaRPCWrapperBase,
             port_id = binding['port_id']
             vlan_id = segments[-1]['segmentation_id']
 
-            result = server(["show interfaces " + port_id])[0]
-
             interfaces = [port_id]
-            for k, v in six.iteritems(result['interfaces']):
-                membership = v.get('interfaceMembership')
-                if membership:
-                    interfaces.append(membership.rsplit(' ')[-1])
+            for pc in six.itervalues(
+                    self._get_interface_membership(server, [port_id])):
+                if pc:
+                    interfaces.append(pc)
 
             cmds = [
                 'enable',

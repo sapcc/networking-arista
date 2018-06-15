@@ -63,7 +63,7 @@ ARISTA_DRIVER_OPTS = [
                       'EOS waits before timing out. If not set, a value of 10 '
                       'seconds is assumed.')),
     cfg.IntOpt('max_connections',
-               default=2,
+               default=1,
                help=_('Maximum number of parallel connections each worker '
                       'should open')),
     cfg.IntOpt('max_pools',
@@ -73,7 +73,7 @@ ARISTA_DRIVER_OPTS = [
                default=5,
                help=_('Maximum number of retries for each http-request')),
     cfg.BoolOpt('http_pool_block',
-                default=True,
+                default=False,
                 help=_('Should the worker block on if the max_connections '
                        'connections for the server has been reached')
                 ),
@@ -82,7 +82,7 @@ ARISTA_DRIVER_OPTS = [
                 help=_('Should certificates of ssl connections be verified')
                 ),
     cfg.BoolOpt('http_connection_close',
-                default=False,
+                default=True,
                 help=_('Should connections be closed, and not re-used')
                 ),
     cfg.BoolOpt('skip_unplug',

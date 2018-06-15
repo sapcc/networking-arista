@@ -63,7 +63,7 @@ ARISTA_DRIVER_OPTS = [
                       'EOS waits before timing out. If not set, a value of 10 '
                       'seconds is assumed.')),
     cfg.IntOpt('max_connections',
-               default=10,
+               default=2,
                help=_('Maximum number of parallel connections each worker '
                       'should open')),
     cfg.IntOpt('max_pools',
@@ -73,7 +73,7 @@ ARISTA_DRIVER_OPTS = [
                default=5,
                help=_('Maximum number of retries for each http-request')),
     cfg.BoolOpt('http_pool_block',
-                default=False,
+                default=True,
                 help=_('Should the worker block on if the max_connections '
                        'connections for the server has been reached')
                 ),
@@ -82,7 +82,7 @@ ARISTA_DRIVER_OPTS = [
                 help=_('Should certificates of ssl connections be verified')
                 ),
     cfg.BoolOpt('http_connection_close',
-                default=True,
+                default=False,
                 help=_('Should connections be closed, and not re-used')
                 ),
     cfg.BoolOpt('skip_unplug',
@@ -105,6 +105,10 @@ ARISTA_DRIVER_OPTS = [
                        'True, this means switch_info(see below) must be '
                        'defined. If this flag is not defined, it is assumed '
                        'to be False')),
+    cfg.BoolOpt('sec_group_background_only',
+                default=True,
+                help=_('Only update the security groups in a background sync '
+                       'thread ')),
     cfg.ListOpt('switch_info',
                 default=[],
                 help=_('This is a comma separated list of Arista Switches '

@@ -864,7 +864,8 @@ class AristaDriver(driver_api.MechanismDriver):
                     device_id, device_owner, hostname, port_id, network_id,
                     tenant_id, sg, vnic_type, switch_bindings=switch_bindings,
                     segments=segments)
-                self.rpc.remove_security_group(sg, switch_bindings)
+                if not cfg.CONF.ml2_arista.sec_group_background_only:
+                    self.rpc.remove_security_group(sg, switch_bindings)
 
             # if necessary, delete tenant as well.
             self.delete_tenant(context, tenant_id)
@@ -1041,7 +1042,8 @@ class AristaDriver(driver_api.MechanismDriver):
         pass
 
     def update_security_group(self, context, sg):
-        if not self._is_security_group_used(context, sg['id']):
+        if (cfg.CONF.ml2_arista.sec_group_background_only
+                or not self._is_security_group_used(context, sg['id'])):
             return
 
         try:
@@ -1052,7 +1054,9 @@ class AristaDriver(driver_api.MechanismDriver):
             raise arista_exc.AristaSecurityGroupError(msg=msg)
 
     def create_security_group_rule(self, context, sgr):
-        if not self._is_security_group_used(context, sgr['security_group_id']):
+        if (cfg.CONF.ml2_arista.sec_group_background_only
+                or not self._is_security_group_used(context,
+                                                    sgr['security_group_id'])):
             return
 
         try:
@@ -1063,6 +1067,8 @@ class AristaDriver(driver_api.MechanismDriver):
             raise arista_exc.AristaSecurityGroupError(msg=msg)
 
     def delete_security_group_rule(self, context, sgr_id):
+        if cfg.CONF.ml2_arista.sec_group_background_only:
+            return
         if not sgr_id:
             return
         sgr = self.ndb.get_security_group_rule(context, sgr_id)

@@ -1140,25 +1140,26 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
             acl_on_server = active_acls[server_id]
             for port_id, sgs in six.iteritems(port_security_groups):
+                acl_on_port = acl_on_server[port_id]
                 if sgs:
-                    acl_on_port = acl_on_server[port_id]
                     if all(acl_on_port[i] == self._arista_acl_name(sgs, dir)
                            for i, dir in enumerate(DIRECTIONS)):
                         continue
 
                     self.apply_acl(sgs, server=server, port_id=port_id)
                 else:
-                    try:
-                        self._run_openstack_sg_cmds([
-                            'interface ' + port_id,
-                            'ip access-group default in',
-                            'no ip access-group default in',
-                            'ip access-group default out',
-                            'no ip access-group default out',
-                            'exit'
-                        ], server)
-                    except arista_exc.AristaServicePluginRpcError:
-                        pass
+                    if acl_on_port != [None,None]:
+                        try:
+                            self._run_openstack_sg_cmds([
+                                'interface ' + port_id,
+                                'ip access-group default in',
+                                'no ip access-group default in',
+                                'ip access-group default out',
+                                'no ip access-group default out',
+                                'exit'
+                            ], server)
+                        except arista_exc.AristaServicePluginRpcError:
+                            pass
 
         for server_id, acls_on_switch in six.iteritems(existing_acls):
             unknown_acls = set(acls_on_switch.iterkeys()) - known_acls

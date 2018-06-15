@@ -1084,6 +1084,8 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                             if_name = interface['name']
                             active_acls_per_port[if_name][i] = acl_name
             except HTTPException:
+                LOG.warning("Failed to fetch the ip access-lists, "
+                            "assuming empty list")
                 existing_acls[server_id] = {}
 
         # Create the ACLs on Arista Switches

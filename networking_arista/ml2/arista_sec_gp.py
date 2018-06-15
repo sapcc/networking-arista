@@ -1148,7 +1148,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
                     self.apply_acl(sgs, server=server, port_id=port_id)
                 else:
-                    if acl_on_port != [None,None]:
+                    if acl_on_port != [None, None]:
                         try:
                             self._run_openstack_sg_cmds([
                                 'interface ' + port_id,

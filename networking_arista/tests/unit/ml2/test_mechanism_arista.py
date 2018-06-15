@@ -18,10 +18,19 @@ from neutron.common import constants as n_const
 from neutron.extensions import portbindings
 from neutron.plugins.ml2 import driver_api as api
 from neutron.tests.unit import testlib_api
+from oslo_config import cfg
 
 from networking_arista.ml2 import mechanism_arista
 
 INTERNAL_TENANT_ID = 'INTERNAL-TENANT-ID'
+
+
+def setup_config():
+    cfg.CONF.set_override('sec_group_support', True, "ml2_arista")
+    cfg.CONF.set_override('switch_info', ['switch1:user:pass'], "ml2_arista")
+    cfg.CONF.set_override('lossy_consolidation_limit', 100, "ml2_arista")
+    cfg.CONF.set_override('sec_group_background_only', False, "ml2_arista")
+    cfg.CONF.set_override('skip_unplug', False, "ml2_arista")
 
 
 class AristaDriverTestCase(testlib_api.SqlTestCase):
@@ -38,6 +47,8 @@ class AristaDriverTestCase(testlib_api.SqlTestCase):
         self.drv = mechanism_arista.AristaDriver(self.fake_rpc)
         patcher = mock.patch('networking_arista.ml2.mechanism_arista.db_lib',
                              new=self.fake_rpc).start()
+
+        setup_config()
         self.addCleanup(patcher.stop)
         self.drv.ndb = mock.MagicMock()
 
@@ -558,9 +569,6 @@ class AristaDriverTestCase(testlib_api.SqlTestCase):
         expected_calls = [
             mock.call.__nonzero__(),
             mock.call.get_physical_network(host_id, context=port_context),
-            mock.call.is_network_provisioned(plugin_context,
-                                             tenant_id, network_id, None,
-                                             None),
             mock.call.unplug_port_from_network(
                 device_id, 'compute', host_id, port_id, network_id, tenant_id,
                 None, vnic_type, switch_bindings=profile,
@@ -611,9 +619,6 @@ class AristaDriverTestCase(testlib_api.SqlTestCase):
 
         expected_calls += [
             mock.call.get_physical_network(host_id, context=port_context),
-            mock.call.is_network_provisioned(plugin_context,
-                                             INTERNAL_TENANT_ID, network_id,
-                                             None, None),
             mock.call.unplug_port_from_network(
                 device_id, 'compute', host_id, port_id, network_id,
                 INTERNAL_TENANT_ID, None, vnic_type,
@@ -862,9 +867,6 @@ class AristaDriverTestCase(testlib_api.SqlTestCase):
             mock.call.create_network_segments(tenant_id, network_id,
                                               network_name,
                                               segments),
-            mock.call.is_network_provisioned(plugin_context,
-                                             tenant_id, network_id, None,
-                                             None),
             mock.call.unplug_port_from_network(
                 device_id, 'compute', orig_host_id, port_id,
                 network_id, tenant_id, None, vnic_type,
@@ -936,9 +938,6 @@ class AristaDriverTestCase(testlib_api.SqlTestCase):
             mock.call.create_network_segments(INTERNAL_TENANT_ID, network_id,
                                               network_name,
                                               segments),
-            mock.call.is_network_provisioned(plugin_context,
-                                             INTERNAL_TENANT_ID, network_id,
-                                             None, None),
             mock.call.unplug_port_from_network(device_id, 'compute',
                                                orig_host_id,
                                                port_id, network_id,
@@ -1045,9 +1044,6 @@ class AristaDriverTestCase(testlib_api.SqlTestCase):
             mock.call.create_network_segments(tenant_id, network_id,
                                               network_name,
                                               segments),
-            mock.call.is_network_provisioned(plugin_context,
-                                             tenant_id, network_id,
-                                             None, None),
             mock.call.unplug_port_from_network(device_id, owner,
                                                orig_host_id,
                                                port_id, network_id,

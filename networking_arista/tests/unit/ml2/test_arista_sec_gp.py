@@ -31,6 +31,8 @@ def setup_config():
     cfg.CONF.set_override('sec_group_support', True, "ml2_arista")
     cfg.CONF.set_override('switch_info', ['switch1:user:pass'], "ml2_arista")
     cfg.CONF.set_override('lossy_consolidation_limit', 100, "ml2_arista")
+    cfg.CONF.set_override('sec_group_background_only', False, "ml2_arista")
+    cfg.CONF.set_override('skip_unplug', False, "ml2_arista")
 
 
 def fake_send_eapi_req(url, cmds):
@@ -65,6 +67,9 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         super(AristaSecGroupSwitchDriverTest, self).setUp()
         setup_config()
         self.fake_rpc = mock.MagicMock()
+        arista_sec_gp.AristaSwitchRPCMixin._SERVER_BY_ID = dict()
+        arista_sec_gp.AristaSwitchRPCMixin._SERVER_BY_IP = dict()
+        arista_sec_gp.AristaSwitchRPCMixin._INTERFACE_MEMBERSHIP = dict()
 
         self.drv = arista_sec_gp.AristaSecGroupSwitchDriver(self.fake_rpc)
         self.drv._send_eapi_req = fake_send_eapi_req

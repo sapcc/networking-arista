@@ -2338,7 +2338,7 @@ class AristaRPCWrapperNoCvx(AristaRPCWrapperBase,
                 ])
             cmds.append('exit')
 
-            result = server(cmds)
+            server(cmds)
 
     def unplug_port_from_network(self, device_id, device_owner, hostname,
                                  neutron_port_id, network_id, tenant_id, sg,
@@ -2381,7 +2381,7 @@ class AristaRPCWrapperNoCvx(AristaRPCWrapperBase,
                 ])
             cmds.append('exit')
 
-            result = server(cmds)
+            server(cmds)
 
     @staticmethod
     def _can_handle_port(segments, switch_bindings, vnic_type):

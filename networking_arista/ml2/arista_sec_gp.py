@@ -174,6 +174,7 @@ class AristaSwitchRPCMixin(object):
         }
 
         try:
+            LOG.debug("Sending %s", cmds)
             response = self._session.post(
                 url,
                 verify=self._verify,

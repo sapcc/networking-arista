@@ -20,8 +20,8 @@ import re
 import socket
 
 from collections import defaultdict
+from copy import copy
 from eventlet.greenpool import GreenPool as Pool
-from eventlet.semaphore import Semaphore as Lock
 from hashlib import sha1
 from httplib import HTTPException
 import requests
@@ -117,7 +117,6 @@ acl_cmd = {
 
 
 class AristaSwitchRPCMixin(object):
-    _LOCK = Lock()
     _SERVER_BY_ID = dict()
     _SERVER_BY_IP = dict()
     _INTERFACE_MEMBERSHIP = defaultdict(dict)
@@ -233,15 +232,21 @@ class AristaSwitchRPCMixin(object):
         if not switches:
             return
 
-        with self._LOCK:
-            pool = Pool()
-            for s in pool.starmap(self._connect_to_switch, switches):
-                pass
+        server_by_ip = copy(self._SERVER_BY_IP)
+        server_by_id = copy(self._SERVER_BY_ID)
+
+        pool = Pool()
+        items = [s for s in pool.starmap(self._connect_to_switch, switches)
+                 if s]
+
+        for switch_ip, system_id, server in items:
+            server_by_ip[switch_ip] = server
+            server_by_id[system_id] = server
+
+        AristaSwitchRPCMixin._SERVER_BY_ID = server_by_id
+        AristaSwitchRPCMixin._SERVER_BY_IP = server_by_ip
 
     def _connect_to_switch(self, switch_ip, switch_user, switch_pass):
-        if switch_ip in self._SERVER_BY_IP:
-            return
-
         if switch_pass == "''":
             switch_pass = ''
         eapi_server_url = ('https://%s:%s@%s/command-api' %
@@ -257,8 +262,7 @@ class AristaSwitchRPCMixin(object):
                 return
             else:
                 system_id = EUI(ret[0]['chassisId'])
-                self._SERVER_BY_ID[system_id] = server
-                self._SERVER_BY_IP[switch_ip] = server
+                return switch_ip, system_id, server
         except (socket.error, HTTPException) as e:
             LOG.warn("Could not connect to server %s due to %s",
                      switch_ip, e)
@@ -267,11 +271,6 @@ class AristaSwitchRPCMixin(object):
     def _server_by_id(self):
         self._maintain_connections()
         return self._SERVER_BY_ID
-
-    @property
-    def _server_by_ip(self):
-        self._maintain_connections()
-        return self._SERVER_BY_IP
 
     def _get_server(self, switch_info=None, switch_id=None):
         self._maintain_connections()

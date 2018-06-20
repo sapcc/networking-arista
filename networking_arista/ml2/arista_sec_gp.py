@@ -13,6 +13,7 @@
 #    under the License.
 
 import collections
+import itertools
 import json
 import math
 import os
@@ -858,7 +859,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                 if existing_acls is not None:
                     server_diff[dir] = self._create_acl_diff([
                         acl for acl in
-                        existing_acls[server_id].get(acl_name, [])
+                        existing_acls[s].get(acl_name, [])
                         if acl['text'] not in self.aclCreateDict['create']
                     ], cmds[dir])
 
@@ -1065,28 +1066,16 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
         existing_acls = dict()
         active_acls = dict()
-        for server_id, server in six.iteritems(self._server_by_id):
-            active_acls_per_port = defaultdict(lambda: [None, None])
-            active_acls[server_id] = active_acls_per_port
-            try:
-                acls, summary = server(
-                    ['show ip access-lists',
-                     'show ip access-lists summary'])
-                existing_acls[server_id] = {
-                    acl['name']: acl['sequence']
-                    for acl in acls['aclList']
-                    if acl['name'].startswith('SG-')
-                }
-                for acl_list in summary['aclList']:
-                    acl_name = acl_list['name']
-                    for i, dir in enumerate(INTERFACE_DIRECTIONS):
-                        for interface in acl_list[dir]:
-                            if_name = interface['name']
-                            active_acls_per_port[if_name][i] = acl_name
-            except HTTPException:
-                LOG.warning("Failed to fetch the ip access-lists, "
-                            "assuming empty list")
-                existing_acls[server_id] = {}
+        pool = Pool()
+        server_by_id = self._server_by_id
+
+        for server, acls in itertools.izip(
+                six.itervalues(server_by_id),
+                pool.imap(
+                    self._fetch_acls, six.itervalues(server_by_id))):
+            existing, active = acls
+            existing_acls[server] = existing
+            active_acls[server] = active
 
         # Create the ACLs on Arista Switches
         security_group_ips = {}
@@ -1124,54 +1113,90 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                 switch = (l.get('switch_info'), l.get('switch_id'))
                 ports_by_switch[switch][l['port_id']] = sgs
 
-        for switch, port_security_groups in six.iteritems(ports_by_switch):
-            server = self._get_server(*switch)
-            if server is None:
-                continue
+        def sync_acl(server, port_security_groups):
+            self._sync_acls(server, active_acls, port_security_groups)
+
+        for _ in pool.starmap(sync_acl, six.iteritems(ports_by_switch)):
+            pass
+
+        def purge_acl(server, acls_on_switch):
+            self._remove_unused_acls(server, acls_on_switch, known_acls)
+
+        for _ in pool.starmap(purge_acl, six.iteritems(existing_acls)):
+            pass
+
+    def _remove_unused_acls(self, server, acls_on_switch, known_acls):
+        unknown_acls = set(acls_on_switch.iterkeys()) - known_acls
+        if not unknown_acls:
+            return
+        LOG.warning("Orphaned ACLs", unknown_acls)
+        for name in unknown_acls:
             try:
-                for k, pc in six.iteritems(self._get_interface_membership(
-                        server, port_security_groups.iterkeys())):
-                    if pc not in port_security_groups:
-                        port_security_groups[pc] = port_security_groups[k]
-            except Exception:
-                msg = (_('Failed to fetch interfaces from EOS %s') % s)
+                self._delete_acl_from_eos(name, server)
+            except Exception as error:
+                msg = (_('Failed to delete ACL on EOS: %s') % error)
                 LOG.exception(msg)
-                continue
+                raise arista_exc.AristaSecurityGroupError(msg=msg)
 
-            acl_on_server = active_acls[server_id]
-            for port_id, sgs in six.iteritems(port_security_groups):
-                acl_on_port = acl_on_server[port_id]
-                if sgs:
-                    if all(acl_on_port[i] == self._arista_acl_name(sgs, dir)
-                           for i, dir in enumerate(DIRECTIONS)):
-                        continue
+    def _sync_acls(self, switch, active_acls, port_security_groups):
+        server = self._get_server(*switch)
+        if server is None:
+            return
 
-                    self.apply_acl(sgs, server=server, port_id=port_id)
-                else:
-                    if acl_on_port != [None, None]:
-                        try:
-                            self._run_openstack_sg_cmds([
-                                'interface ' + port_id,
-                                'ip access-group default in',
-                                'no ip access-group default in',
-                                'ip access-group default out',
-                                'no ip access-group default out',
-                                'exit'
-                            ], server)
-                        except arista_exc.AristaServicePluginRpcError:
-                            pass
+        acl_on_server = active_acls[server]
+        try:
+            for k, pc in six.iteritems(self._get_interface_membership(
+                    server, port_security_groups.iterkeys())):
+                if pc not in port_security_groups:
+                    port_security_groups[pc] = port_security_groups[k]
+        except Exception:
+            msg = (_('Failed to fetch interfaces from EOS'))
+            LOG.exception(msg)
+            port_security_groups = {}
 
-        for server_id, acls_on_switch in six.iteritems(existing_acls):
-            unknown_acls = set(acls_on_switch.iterkeys()) - known_acls
-            if not unknown_acls:
-                continue
+        for port_id, sgs in six.iteritems(port_security_groups):
+            acl_on_port = acl_on_server[port_id]
+            if sgs:
+                if all(acl_on_port[i]
+                       == self._arista_acl_name(sgs, dir)
+                       for i, dir in enumerate(DIRECTIONS)):
+                    continue
 
-            LOG.warning("Orphaned ACL on %s: %s", server_id, unknown_acls)
-            server = self._server_by_id[server_id]
-            for name in unknown_acls:
-                try:
-                    self._delete_acl_from_eos(name, server)
-                except Exception as error:
-                    msg = (_('Failed to delete ACL on EOS: %s') % error)
-                    LOG.exception(msg)
-                    raise arista_exc.AristaSecurityGroupError(msg=msg)
+                self.apply_acl(sgs, server=server, port_id=port_id)
+            else:
+                if acl_on_port != [None, None]:
+                    try:
+                        self._run_openstack_sg_cmds([
+                            'interface ' + port_id,
+                            'ip access-group default in',
+                            'no ip access-group default in',
+                            'ip access-group default out',
+                            'no ip access-group default out',
+                            'exit'
+                        ], server)
+                    except arista_exc.AristaServicePluginRpcError:
+                        pass
+
+    @staticmethod
+    def _fetch_acls(server):
+        active_acls_per_port = defaultdict(lambda: [None, None])
+        try:
+            acls = server(['show ip access-lists'])[0]
+            existing_acls = {
+                acl['name']: acl['sequence']
+                for acl in acls['aclList']
+                if acl['name'].startswith('SG-')
+            }
+            summary = server(['show ip access-lists summary'])[0]
+            for acl_list in summary['aclList']:
+                acl_name = acl_list['name']
+                for i, dir in enumerate(INTERFACE_DIRECTIONS):
+                    for interface in acl_list[dir]:
+                        if_name = interface['name']
+                        active_acls_per_port[if_name][i] = acl_name
+        except (HTTPException, TypeError):
+            #  Request may return None -> None[0] -> TypeError
+            LOG.warning("Failed to fetch the ip access-lists, "
+                        "assuming empty list")
+            existing_acls = {}
+        return existing_acls, active_acls_per_port

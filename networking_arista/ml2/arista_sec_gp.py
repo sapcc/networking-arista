@@ -1174,7 +1174,7 @@ where m1.driver='arista'
                     server(["configure",
                             "interface %s" % port,
                             "switchport trunk allowed vlan %s"
-                            % " ".join(vlans),
+                            % ",".join(vlans),
                             "exit",
                             "exit"
                             ])

@@ -18,16 +18,16 @@ import json
 import math
 import os
 import re
+import requests
 import socket
+import six
 
 from collections import defaultdict
 from copy import copy
 from eventlet.greenpool import GreenPool as Pool
 from hashlib import sha1
 from httplib import HTTPException
-import requests
-
-import six
+from sqlalchemy import text
 
 from netaddr import EUI
 from netaddr import IPNetwork
@@ -1125,11 +1125,65 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         for _ in pool.starmap(purge_acl, six.iteritems(existing_acls)):
             pass
 
+        # This is to simulate the bug that the cvx syncs the VLANs
+        # of ports, even if they are not bound
+        self._sync_vlans_hack(context)
+
+    def _sync_vlans_hack(self, context):
+        q = context.session.execute(text('''
+select
+  STRING_AGG(distinct b1.profile, ',')::json->'local_link_information'
+    as local_link_information,
+  STRING_AGG(distinct cast(s2.segmentation_id as text), ',')
+    as segmentation_ids
+from ports p1
+  join ports p2 on p1.device_id = p2.device_id
+  join ml2_port_bindings b1 on p1.id=b1.port_id
+  join ml2_port_binding_levels m1 on p1.id=m1.port_id
+  join ml2_network_segments as s1 on m1.segment_id=s1.id
+  join ml2_network_segments as s2 on p2.network_id=s2.network_id
+    and s1.physical_network=s2.physical_network
+where m1.driver='arista'
+  group by p1.id;
+        '''))
+
+        server_by_id = self._server_by_id
+        per_port = defaultdict(lambda: defaultdict(set))
+        for profiles, segmentation_ids in q:
+            segmentation_ids = segmentation_ids.split(",")
+            for profile in profiles:
+                switch_id = EUI(profile["switch_id"])
+                port_id = profile["port_id"]
+                server = server_by_id[switch_id]
+
+                per_port[server][port_id].update(segmentation_ids)
+                portgroup = self._get_interface_membership(server, [port_id])
+                portgroup = portgroup.get(port_id)
+                if portgroup:
+                    per_port[server][portgroup].update(segmentation_ids)
+
+        pool = Pool()
+        for _ in pool.starmap(self._sync_ports, six.iteritems(per_port)):
+            pass
+
+    @staticmethod
+    def _sync_ports(server, port_vlans):
+        if server:
+            for port, vlans in six.iteritems(port_vlans):
+                if vlans and len(vlans) > 1:
+                    server(["configure",
+                            "interface %s" % port,
+                            "switchport trunk allowed vlan %s"
+                            % " ".join(vlans),
+                            "exit",
+                            "exit"
+                            ])
+
     def _remove_unused_acls(self, server, acls_on_switch, known_acls):
         unknown_acls = set(acls_on_switch.iterkeys()) - known_acls
         if not unknown_acls:
             return
-        LOG.warning("Orphaned ACLs", unknown_acls)
+        LOG.warning("Orphaned ACLs %s", unknown_acls)
         for name in unknown_acls:
             try:
                 self._delete_acl_from_eos(name, server)

@@ -2331,15 +2331,23 @@ class AristaRPCWrapperNoCvx(AristaRPCWrapperBase,
             ]
             # Setup interface with the named VLAN
             for interface in interfaces:
-                cmds.extend([
-                    'interface %s' % interface,
-                    'switchport mode trunk',
-                    'switchport trunk allowed vlan %d' % vlan_id,
-                    'switchport trunk native vlan %d' % vlan_id,
-                    'exit',
-                ])
-            cmds.append('exit')
+                if not vlan_type == 'allowed':
+                    cmds.extend([
+                        'interface %s' % interface,
+                        'switchport mode trunk',
+                        'switchport trunk allowed vlan %d' % vlan_id,
+                        'switchport trunk native vlan %d' % vlan_id,
+                        'exit',
+                    ])
+                else:
+                    cmds.extend([
+                        'interface %s' % interface,
+                        'switchport mode trunk',
+                        'switchport trunk allowed vlan add %d' % vlan_id,
+                        'exit',
+                    ])
 
+            cmds.append('exit')
             server(cmds)
 
     def unplug_port_from_network(self, device_id, device_owner, hostname,

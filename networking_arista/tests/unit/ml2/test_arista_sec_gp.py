@@ -117,7 +117,8 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                 self.drv._arista_acl_name(sg_id, 'ingress'): [
                     {'text': 'permit tcp any any established'},
                     {'text': 'permit udp any eq 67 any eq 68'},
-                    {'text': 'permit tcp 192.168.0.1/30 any range 22 1025 syn'},
+                    {'text': 'permit tcp 192.168.0.1/30 any '
+                             'range 22 1025 syn'},
                 ],
                 self.drv._arista_acl_name(sg_id, 'egress'): [
                     {'text': 'permit tcp any any established'},
@@ -403,4 +404,5 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                             self._get_existing_acls(sg['id']))
         self.assertEqual(1, self.mock_sg_cmds.call_count,
                          "expected to be called once")
-        self.assertNotIn('permit tcp any any established', self.mock_sg_cmds.call_args[0][0])
+        self.assertNotIn('permit tcp any any established',
+                         self.mock_sg_cmds.call_args[0][0])

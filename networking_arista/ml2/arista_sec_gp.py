@@ -19,8 +19,8 @@ import math
 import os
 import re
 import requests
-import socket
 import six
+import socket
 
 from collections import defaultdict
 from copy import copy
@@ -516,7 +516,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             return in_cmds, out_cmds
 
         if sgr['ethertype'] is not None \
-            and sgr['ethertype'] not in SUPPORTED_SG_ETHERTYPES:
+                and sgr['ethertype'] not in SUPPORTED_SG_ETHERTYPES:
             return in_cmds, out_cmds
 
         if sgr['protocol'] is None:
@@ -584,7 +584,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                 self._run_openstack_sg_cmds(cmds, s)
             except Exception as e:
                 msg = (_('Failed to create ACL rule on EOS %(server)s '
-                       ' due to %(exc)s') %
+                         ' due to %(exc)s') %
                        {'server': server_id, 'exc': e})
                 LOG.debug(msg)
 
@@ -875,7 +875,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                         server_diff['ingress'] + server_diff['egress'], s)
             except Exception as error:
                 msg = (_('Failed to create ACL on EOS %(server)s '
-                       ' due to %(msg)s') %
+                         ' due to %(msg)s') %
                        {'server': server_id, 'msg': error.message})
                 LOG.exception(msg)
                 # raise arista_exc.AristaSecurityGroupError(msg=msg)
@@ -972,8 +972,8 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             except Exception as e:
                 msg = _('Failed to remove ACL on port %(port)s '
                         'due to %(msg)s') % {
-                    'port': port_id,
-                    'msg': e.message}
+                          'port': port_id,
+                          'msg': e.message}
                 LOG.exception(msg)
                 # No need to raise exception for ACL removal
                 # raise arista_exc.AristaSecurityGroupError(msg=msg)
@@ -1117,13 +1117,15 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         def sync_acl(server, port_security_groups):
             self._sync_acls(server, active_acls, port_security_groups)
 
-        for _ in pool.starmap(sync_acl, six.iteritems(ports_by_switch)):
+        for _sync_acl in pool.starmap(sync_acl,
+                                      six.iteritems(ports_by_switch)):
             pass
 
         def purge_acl(server, acls_on_switch):
             self._remove_unused_acls(server, acls_on_switch, known_acls)
 
-        for _ in pool.starmap(purge_acl, six.iteritems(existing_acls)):
+        for _purge_acl in pool.starmap(purge_acl,
+                                       six.iteritems(existing_acls)):
             pass
 
         # This is to simulate the bug that the cvx syncs the VLANs
@@ -1164,7 +1166,8 @@ where m1.driver='arista'
                     per_port[server][portgroup].update(segmentation_ids)
 
         pool = Pool()
-        for _ in pool.starmap(self._sync_ports, six.iteritems(per_port)):
+        for _sync_ports in pool.starmap(self._sync_ports,
+                                        six.iteritems(per_port)):
             pass
 
     @staticmethod

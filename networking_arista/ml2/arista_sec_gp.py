@@ -67,8 +67,8 @@ INTERFACE_DIRECTIONS = ['configuredEgressIntfs', 'configuredIngressIntfs']
 
 acl_cmd = {
     # For a rule 0: protocol, 1: cidr, 2: from_port, 3: to_port, 4: flags
-    'acl': {'create': ['ip access-list {0}',
-                       'permit tcp any any established'],
+    'acl': {'create': ['ip access-list {0}'],
+            'tcp_established': ['permit tcp any any established'],
             'in_rule': ['permit {0} {1} any range {2} {3} {4}'],
             'in_rule_reverse': ['permit {0} any range {2} {3} {1}'],
             'out_rule': ['permit {0} any {1} range {2} {3}'],
@@ -829,7 +829,8 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
         self._sg_enable_dhcp(security_group_rules)
 
-        cmds = {'ingress': [], 'egress': []}
+        cmds = {'ingress': list(self.aclCreateDict['tcp_established']),
+                'egress': list(self.aclCreateDict['tcp_established'])}
         for sgr in security_group_rules:
             cmds['ingress'], cmds['egress'] = self._create_acl_rule(
                 context,

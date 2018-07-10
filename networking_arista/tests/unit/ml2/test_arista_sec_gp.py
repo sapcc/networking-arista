@@ -17,6 +17,7 @@ import json
 import math
 import os
 
+import mock
 from netaddr import EUI
 from neutron.context import get_admin_context
 from neutron.tests.unit import testlib_api

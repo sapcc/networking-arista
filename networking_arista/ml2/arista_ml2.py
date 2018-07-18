@@ -2297,9 +2297,6 @@ class AristaRPCWrapperNoCvx(AristaRPCWrapperBase,
             LOG.debug("Ignoring port %s", neutron_port_id)
             return
 
-        self._maintain_connections()
-        LOG.debug("Ensured connection")
-
         for binding in switch_bindings:
             if not binding:
                 continue

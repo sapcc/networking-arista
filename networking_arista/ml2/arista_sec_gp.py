@@ -270,14 +270,25 @@ class AristaSwitchRPCMixin(object):
 
     @property
     def _server_by_id(self):
-        self._maintain_connections()
         return self._SERVER_BY_ID
 
+    def _get_server_by_id(self, switch_id):
+        return switch_id and self._SERVER_BY_ID.get(EUI(switch_id))
+
+    def _get_server_by_ip(self, switch_ip):
+        return switch_ip and self._SERVER_BY_IP.get(switch_ip)
+
     def _get_server(self, switch_info=None, switch_id=None):
+        server = (self._get_server_by_id(switch_id)
+                  or self._get_server_by_ip(switch_info))
+
+        if server:
+            return server
+
         self._maintain_connections()
 
-        return (self._SERVER_BY_IP.get(switch_info)
-                or self._SERVER_BY_ID.get(EUI(switch_id)))
+        return (self._get_server_by_id(switch_id)
+                or self._get_server_by_ip(switch_info))
 
 
 class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
@@ -1045,6 +1056,8 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
         if not self.sg_enabled:
             return
+
+        self._maintain_connections()
 
         arista_ports = db_lib.get_ports(context)
         arista_port_ids = set(arista_ports.iterkeys())

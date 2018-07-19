@@ -32,6 +32,7 @@ from sqlalchemy import text
 from netaddr import EUI
 from netaddr import IPNetwork
 from netaddr import IPSet
+from oslo_cache import core as cache
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils.importutils import try_import
@@ -64,6 +65,25 @@ SUPPORTED_SG_ETHERTYPES = ['IPv4']
 
 DIRECTIONS = ['ingress', 'egress']
 INTERFACE_DIRECTIONS = ['configuredEgressIntfs', 'configuredIngressIntfs']
+
+CONF = cfg.CONF
+
+memoize = cfg.BoolOpt('memoize', default=True)
+
+# Do not expire by default, as we only store "fixed" values
+# This ensures that we do not need to connect to all the switches to
+# get the association between system_id (EUI), and the ip
+memoize_time = cfg.IntOpt('memoize_time', default=0)
+CONF.register_opts([memoize, memoize_time], 'ml2_arista')
+
+cache.configure(CONF)
+arista_cache_region = cache.create_region()
+MEMOIZE = cache.get_memoization_decorator(
+    CONF, arista_cache_region, 'ml2_arista')
+
+# Load config file here
+
+cache.configure_cache_region(CONF, arista_cache_region)
 
 acl_cmd = {
     # For a rule 0: protocol, 1: cidr, 2: from_port, 3: to_port, 4: flags
@@ -256,13 +276,21 @@ class AristaSwitchRPCMixin(object):
             def server(cmds):
                 return self._send_eapi_req(eapi_server_url, cmds)
 
-            ret = server(['show lldp local-info management 1'])
-            if not ret:
+            @MEMOIZE
+            def get_lldp_info(_):
+                try:
+                    ret = server(['show lldp local-info management 1'])
+                    return EUI(ret[0]['chassisId'])
+                except (IndexError, TypeError, KeyError):
+                    return None
+
+            system_id = get_lldp_info(switch_ip)
+            if not system_id:
+                get_lldp_info.invalidate(switch_ip)
                 LOG.warn("Could not connect to server %s",
                          switch_ip)
                 return
             else:
-                system_id = EUI(ret[0]['chassisId'])
                 return switch_ip, system_id, server
         except (socket.error, HTTPException) as e:
             LOG.warn("Could not connect to server %s due to %s",

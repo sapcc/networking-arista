@@ -56,6 +56,9 @@ ARISTA_DRIVER_OPTS = [
                       'synchronization is performed. This is an optional '
                       'field. If not set, a value of 30 seconds is '
                       'assumed.')),
+    cfg.StrOpt('coordinator_url',
+               default=None,
+               help=_('Tooz coordinator url to avoid duplicated syncing')),
     cfg.IntOpt('conn_timeout',
                default=10,
                help=_('Connection timeout interval in seconds. This interval '

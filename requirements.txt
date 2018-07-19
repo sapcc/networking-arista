@@ -10,3 +10,4 @@ oslo.log    # Apache-2.0
 pbr>=1.6
 six
 oslo.cache
+tooz

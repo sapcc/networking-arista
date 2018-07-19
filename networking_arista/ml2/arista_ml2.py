@@ -30,6 +30,7 @@ from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import excutils
 from six import add_metaclass
+from tooz import coordination
 
 from networking_arista._i18n import _, _LI, _LW, _LE
 from networking_arista.common import db_lib
@@ -2006,6 +2007,44 @@ class SyncService(object):
         self._ndb = neutron_db
         self._force_sync = True
         self._region_updated_time = None
+        self._coordinator = None
+        self._member_id = None
+        self._is_leader = False
+        self._setup_coordination()
+
+    def _setup_coordination(self):
+        if not cfg.CONF.ml2_arista.coordinator_url:
+            return
+
+        self._member_id = six.binary_type(
+            "{}({})".format(cfg.CONF.host, os.getpid()).encode('ascii'))
+
+        coordinator =  coordination.get_coordinator(
+            cfg.CONF.ml2_arista.coordinator_url,
+            self._member_id,
+            [coordination.Characteristics.DISTRIBUTED_ACROSS_HOSTS]
+        )
+        self._coordinator = coordinator
+
+        coordinator.start()
+
+        group_id = six.binary_type(
+            six.text_type('ml2_arista_sync_service').encode('ascii'))
+
+        try:
+            request = coordinator.create_group(group_id)
+            request.get()
+        except coordination.GroupAlreadyExist:
+            pass
+
+        request = coordinator.join_group(group_id)
+        request.get()
+
+        coordinator.watch_elected_as_leader(
+            group_id, self._become_leader)
+
+    def _become_leader(self, event):
+        self._is_leader = event.member_id == self._member_id
 
     def force_sync(self):
         """Sets the force_sync flag."""
@@ -2017,6 +2056,14 @@ class SyncService(object):
            If ML2 database is not in sync with EOS, then compute the diff and
            send it down to EOS.
         """
+
+        if self._coordinator:
+            self._coordinator.heartbeat()
+            self._coordinator.run_watchers()
+            if not self._is_leader:
+                LOG.debug("Not leader")
+                return
+
         # Perform sync of Security Groups unconditionally
         try:
             self._rpc.perform_sync_of_sg(self._context)

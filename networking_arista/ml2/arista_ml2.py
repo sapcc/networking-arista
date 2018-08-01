@@ -2022,7 +2022,8 @@ class SyncService(object):
         coordinator =  coordination.get_coordinator(
             cfg.CONF.ml2_arista.coordinator_url,
             self._member_id,
-            [coordination.Characteristics.DISTRIBUTED_ACROSS_HOSTS]
+            [coordination.Characteristics.DISTRIBUTED_ACROSS_HOSTS],
+            membership_timeout=cfg.CONF.ml2_arista.sync_interval * 2
         )
         self._coordinator = coordinator
 
@@ -2061,7 +2062,7 @@ class SyncService(object):
             self._coordinator.heartbeat()
             self._coordinator.run_watchers()
             if not self._is_leader:
-                LOG.debug("Not leader")
+                LOG.info("Not leader")
                 return
 
         # Perform sync of Security Groups unconditionally

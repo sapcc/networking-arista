@@ -854,7 +854,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         return "{action} {protocol} {src} {dst} {flags}".format(**prop).strip()
 
     def create_acl(self, context, sg,
-                   security_group_ips=None, existing_acls=None):
+                   security_group_ips=None, existing_acls=None, switches=None):
         """Creates an ACL on Arista Switch.
 
         Deals with multiple configurations - such as multiple switches
@@ -881,11 +881,13 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                      'egress': len(cmds['egress']) - 2}
 
         # let's consolidate
-        cmds = self._consolidate_cmds(cmds, num_rules['ingress'] + num_rules[
-            'egress'])
+        cmds = self._consolidate_cmds(cmds, num_rules['ingress']
+                                      + num_rules['egress'])
 
         # Create per server diff and apply
         for server_id, s in six.iteritems(self._server_by_id):
+            if switches is not None and server_id not in switches:
+                continue
             server_diff = cmds.copy()
             for d, dir in enumerate(DIRECTIONS):
                 tags = ['server.id:' + str(server_id),
@@ -938,10 +940,11 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             for server_id, s in six.iteritems(self._server_by_id):
                 tags = ['server.id:' + str(server_id),
                         'security.group:' + sg['id'],
-                        'project.id:' + sg['tenant_id'], 'direction:' + d
+                        'project.id:' + sg['tenant_id'],
+                        'direction:' + d
                         ]
-                self._statsd.gauge('networking.arista.security.groups', 0,
-                                   tags=tags)
+                self._statsd.gauge('networking.arista.security.groups',
+                                   0, tags=tags)
                 try:
                     self._delete_acl_from_eos(name, s)
                 except Exception as error:
@@ -1095,16 +1098,30 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             context, filters={'id': set(binding['security_group_id']
                                         for binding in sg_bindings)})
 
-        all_sgs = set()
+        all_sgs = collections.defaultdict(set)
         sgs_dict = collections.defaultdict(list)
+        all_bm_ports = dict(db_lib.get_all_baremetal_ports(context))
 
         # Get the list of Security Groups of interest to us
         for s in sg_bindings:
             sgs_dict[s['port_id']].append(s['security_group_id'])
 
-        for sgs in six.itervalues(sgs_dict):
+        for port_id, sgs in six.iteritems(sgs_dict):
             if sgs:
-                all_sgs.add(tuple(sorted(sgs)))
+                port = all_bm_ports.get(port_id)
+                if port:
+                    try:
+                        profile = json.loads(port['profile'])
+                    except ValueError:
+                        continue
+                    port['profile'] = profile
+                    link_info = profile['local_link_information']
+                    for l in link_info:
+                        if not l:
+                            # skip all empty entries
+                            continue
+                        switch = EUI(l.get('switch_id'))
+                        all_sgs[tuple(sorted(sgs))].add(switch)
 
         existing_acls = dict()
         active_acls = dict()
@@ -1121,8 +1138,8 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
         # Create the ACLs on Arista Switches
         security_group_ips = {}
-        known_acls = set()
-        for sg_ids in all_sgs:
+        known_acls = defaultdict(set)
+        for sg_ids, switches in six.iteritems(all_sgs):
             if len(sg_ids) == 1:
                 sg = neutron_sgs[sg_ids[0]]
             else:
@@ -1137,16 +1154,27 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                     rules.extend(neutron_sgs[sg_id]['security_group_rules'])
 
             for direction in DIRECTIONS:
-                known_acls.add(self._arista_acl_name(sg['id'], direction))
+                for switch in switches:
+                    server = server_by_id.get(switch)
+                    if server:
+                        known_acls[server].add(
+                            self._arista_acl_name(sg['id'], direction)
+                        )
             self.create_acl(context, sg,
                             security_group_ips=security_group_ips,
-                            existing_acls=existing_acls)
+                            existing_acls=existing_acls,
+                            switches=switches)
 
         # Get Baremetal port profiles, if any
         ports_by_switch = collections.defaultdict(dict)
-        for bm in six.itervalues(db_lib.get_all_baremetal_ports(context)):
+        for bm in six.itervalues(all_bm_ports):
             sgs = sgs_dict.get(bm['port_id'], [])
-            profile = json.loads(bm['profile'])
+            profile = bm['profile']
+            if not isinstance(profile, dict):
+                try:
+                    profile = json.loads(profile)
+                except ValueError:
+                    continue
             link_info = profile['local_link_information']
             for l in link_info:
                 if not l:
@@ -1170,7 +1198,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             pass
 
     def _remove_unused_acls(self, server, acls_on_switch, known_acls):
-        unknown_acls = set(acls_on_switch.iterkeys()) - known_acls
+        unknown_acls = set(acls_on_switch.iterkeys()) - known_acls[server]
         if not unknown_acls:
             return
         LOG.warning("Orphaned ACLs %s", unknown_acls)

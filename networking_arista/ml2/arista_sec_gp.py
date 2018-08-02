@@ -1076,6 +1076,25 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
         return '-'.join(['SG', in_out, name])
 
+    @staticmethod
+    def _switches_on_port(port):
+        if not port:
+            return
+
+        profile = port['profile']
+        if not isinstance(profile, dict):
+            try:
+                profile = json.loads(profile)
+                port['profile'] = profile
+            except ValueError:
+                return
+
+        link_info = profile.get('local_link_information') or []
+        for l in link_info:
+            if isinstance(l, dict):
+                yield (l.get('switch_info'), EUI(l.get('switch_id'))),\
+                      l.get('port_id')
+
     def perform_sync_of_sg(self, context):
         """Perform sync of the security groups between ML2 and EOS.
 
@@ -1109,22 +1128,10 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         for port_id, sgs in six.iteritems(sgs_dict):
             if sgs:
                 port = all_bm_ports.get(port_id)
-                if port:
-                    try:
-                        profile = json.loads(port['profile'])
-                    except ValueError:
-                        continue
-                    port['profile'] = profile
-                    link_info = profile['local_link_information']
-                    for l in link_info:
-                        if not l:
-                            # skip all empty entries
-                            continue
-                        switch = EUI(l.get('switch_id'))
-                        all_sgs[tuple(sorted(sgs))].add(switch)
+                for switch,_ in self._switches_on_port(port):
+                    all_sgs[tuple(sorted(sgs))].add(switch[-1])
 
         existing_acls = dict()
-        active_acls = dict()
         pool = Pool()
         server_by_id = self._server_by_id
 
@@ -1132,9 +1139,8 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                 six.itervalues(server_by_id),
                 pool.imap(
                     self._fetch_acls, six.itervalues(server_by_id))):
-            existing, active = acls
+            existing = acls
             existing_acls[server] = existing
-            active_acls[server] = active
 
         # Create the ACLs on Arista Switches
         security_group_ips = {}
@@ -1167,38 +1173,22 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
         # Get Baremetal port profiles, if any
         ports_by_switch = collections.defaultdict(dict)
-        for bm in six.itervalues(all_bm_ports):
-            sgs = sgs_dict.get(bm['port_id'], [])
-            profile = bm['profile']
-            if not isinstance(profile, dict):
-                try:
-                    profile = json.loads(profile)
-                except ValueError:
-                    continue
-            link_info = profile['local_link_information']
-            for l in link_info:
-                if not l:
-                    # skip all empty entries
-                    continue
-                switch = (l.get('switch_info'), l.get('switch_id'))
-                ports_by_switch[switch][l['port_id']] = sgs
+        for port in six.itervalues(all_bm_ports):
+            sgs = sgs_dict.get(port['port_id'], [])
+            for switch, port_id in self._switches_on_port(port):
+                ports_by_switch[switch][port_id] = sgs
 
-        def sync_acl(server, port_security_groups):
-            self._sync_acls(server, active_acls, port_security_groups)
+        def sync_acl(switch, port_security_groups):
+            server = self._get_server(*switch)
+            if server is None:
+                return
+            self._sync_acls(server, port_security_groups, known_acls[server])
 
-        for _sync_acl in pool.starmap(sync_acl,
-                                      six.iteritems(ports_by_switch)):
+        for _sync_acl in pool.starmap(
+                sync_acl, six.iteritems(ports_by_switch)):
             pass
 
-        def purge_acl(server, acls_on_switch):
-            self._remove_unused_acls(server, acls_on_switch, known_acls)
-
-        for _purge_acl in pool.starmap(purge_acl,
-                                       six.iteritems(existing_acls)):
-            pass
-
-    def _remove_unused_acls(self, server, acls_on_switch, known_acls):
-        unknown_acls = set(acls_on_switch.iterkeys()) - known_acls[server]
+    def _remove_unused_acls(self, server, unknown_acls):
         if not unknown_acls:
             return
         LOG.warning("Orphaned ACLs %s", unknown_acls)
@@ -1210,24 +1200,33 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                 LOG.exception(msg)
                 raise arista_exc.AristaSecurityGroupError(msg=msg)
 
-    def _sync_acls(self, switch, active_acls, port_security_groups):
-        server = self._get_server(*switch)
-        if server is None:
-            return
+    def _sync_acls(self, server, port_security_groups, known_acls):
+        # Fetches the summary, which is the basis of all the current work
+        port_to_acl = defaultdict(lambda: [None, None])
+        summary = server(['show ip access-lists summary'])[0]
+        acls_on_server = set()
+        for acl_list in summary['aclList']:
+            acl_name = acl_list['name']
+            if not acl_name.startswith('SG-'):
+                continue
+            acls_on_server.add(acl_name)
+            for i, dir in enumerate(INTERFACE_DIRECTIONS):
+                for interface in acl_list[dir]:
+                    if_name = interface['name']
+                    port_to_acl[if_name][i] = acl_name
 
-        acl_on_server = active_acls[server]
+        # Get the port-channel memberships
         try:
             for k, pc in six.iteritems(self._get_interface_membership(
                     server, port_security_groups.iterkeys())):
                 if pc not in port_security_groups:
                     port_security_groups[pc] = port_security_groups[k]
         except Exception:
-            msg = (_('Failed to fetch interfaces from EOS'))
+            msg = (_('Failed to fetch interface memberships from EOS'))
             LOG.exception(msg)
-            port_security_groups = {}
 
         for port_id, sgs in six.iteritems(port_security_groups):
-            acl_on_port = acl_on_server[port_id]
+            acl_on_port = port_to_acl[port_id]
             if sgs:
                 if all(acl_on_port[i]
                        == self._arista_acl_name(sgs, dir)
@@ -1249,9 +1248,10 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                     except arista_exc.AristaServicePluginRpcError:
                         pass
 
+        self._remove_unused_acls(server, acls_on_server - known_acls)
+
     @staticmethod
     def _fetch_acls(server):
-        active_acls_per_port = defaultdict(lambda: [None, None])
         try:
             acls = server(['show ip access-lists'])[0]
             existing_acls = {
@@ -1259,16 +1259,10 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                 for acl in acls['aclList']
                 if acl['name'].startswith('SG-')
             }
-            summary = server(['show ip access-lists summary'])[0]
-            for acl_list in summary['aclList']:
-                acl_name = acl_list['name']
-                for i, dir in enumerate(INTERFACE_DIRECTIONS):
-                    for interface in acl_list[dir]:
-                        if_name = interface['name']
-                        active_acls_per_port[if_name][i] = acl_name
+
         except (HTTPException, TypeError):
             #  Request may return None -> None[0] -> TypeError
             LOG.warning("Failed to fetch the ip access-lists, "
                         "assuming empty list")
             existing_acls = {}
-        return existing_acls, active_acls_per_port
+        return existing_acls

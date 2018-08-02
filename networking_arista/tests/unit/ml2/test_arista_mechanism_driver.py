@@ -1615,6 +1615,10 @@ class AristaRPCWrapperInvalidConfigTestCase(base.BaseTestCase):
                           arista_ml2.AristaRPCWrapperEapi, ndb)
 
 
+class TestException(Exception):
+    pass
+
+
 class NegativeRPCWrapperTestCase(testlib_api.SqlTestCase):
     """Negative test cases to test the RPC between Arista Driver and EOS."""
 
@@ -1631,9 +1635,10 @@ class NegativeRPCWrapperTestCase(testlib_api.SqlTestCase):
         ndb = db_lib.NeutronNets()
         drv = arista_ml2.AristaRPCWrapperEapi(ndb)
 
-        drv._server = mock.MagicMock()
-        drv._server.runCmds.side_effect = Exception('server error')
-        self.assertRaises(arista_exc.AristaRpcError, drv.get_tenants)
+        drv.http_session = mock.MagicMock()
+        exc = TestException('server error')
+        drv.http_session.post.side_effect = exc
+        self.assertRaises(TestException, drv.get_tenants)
 
 
 class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):

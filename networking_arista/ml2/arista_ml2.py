@@ -2019,7 +2019,7 @@ class SyncService(object):
         self._member_id = six.binary_type(
             "{}({})".format(cfg.CONF.host, os.getpid()).encode('ascii'))
 
-        coordinator =  coordination.get_coordinator(
+        coordinator = coordination.get_coordinator(
             cfg.CONF.ml2_arista.coordinator_url,
             self._member_id,
             [coordination.Characteristics.DISTRIBUTED_ACROSS_HOSTS],
@@ -2051,6 +2051,14 @@ class SyncService(object):
         """Sets the force_sync flag."""
         self._force_sync = True
 
+    def _check_leader(self):
+        if not self._coordinator:
+            return True
+
+        self._coordinator.heartbeat()
+        self._coordinator.run_watchers()
+        return self._is_leader
+
     def do_synchronize(self):
         """Periodically check whether EOS is in sync with ML2 driver.
 
@@ -2058,12 +2066,9 @@ class SyncService(object):
            send it down to EOS.
         """
 
-        if self._coordinator:
-            self._coordinator.heartbeat()
-            self._coordinator.run_watchers()
-            if not self._is_leader:
-                LOG.info("Not leader")
-                return
+        if not self._check_leader():
+            LOG.info("Not leader")
+            return
 
         # Perform sync of Security Groups unconditionally
         try:

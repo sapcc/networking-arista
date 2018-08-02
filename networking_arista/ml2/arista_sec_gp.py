@@ -27,7 +27,6 @@ from copy import copy
 from eventlet.greenpool import GreenPool as Pool
 from hashlib import sha1
 from httplib import HTTPException
-from sqlalchemy import text
 
 from netaddr import EUI
 from netaddr import IPNetwork
@@ -161,14 +160,17 @@ class AristaSwitchRPCMixin(object):
         if not missing:
             return result
 
-        ret = server(["show interfaces " + ",".join(missing)])[0]
-        for port, v in six.iteritems(ret['interfaces']):
-            pc = None
-            membership = v.get('interfaceMembership')
-            if membership:
-                pc = membership.rsplit(' ')[-1]
-            ifm[port] = pc
-            result[port] = pc
+        ret = server(["show interfaces " + ",".join(missing)])
+        if ret and ret[0]:
+            for port, v in six.iteritems(ret[0]['interfaces']):
+                if not v:
+                    continue
+                pc = None
+                membership = v.get('interfaceMembership')
+                if membership:
+                    pc = membership.rsplit(' ')[-1]
+                ifm[port] = pc
+                result[port] = pc
         return result
 
     def _send_eapi_req(self, url, cmds):
@@ -1128,7 +1130,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         for port_id, sgs in six.iteritems(sgs_dict):
             if sgs:
                 port = all_bm_ports.get(port_id)
-                for switch,_ in self._switches_on_port(port):
+                for switch, port_id in self._switches_on_port(port):
                     all_sgs[tuple(sorted(sgs))].add(switch[-1])
 
         existing_acls = dict()

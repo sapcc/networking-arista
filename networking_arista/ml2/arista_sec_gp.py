@@ -804,14 +804,16 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             # new rule? add to doff
             if len(acls) == 0:
                 diff.append(new_acl)
-
-            # Mark them as already synced
-            for acl in acls:
-                acl['synced'] = True
+            else:
+                # Mark them as already synced
+                for acl in acls:
+                    acl['synced'] = True
+                    acl['duplicate'] = True
+                acls[0]['duplicate'] = False
 
         diff += ['no {}'.format(acl['sequenceNumber'])
                  for acl in existing_acls
-                 if 'synced' not in acl]
+                 if 'synced' not in acl or acl.get('duplicate', False)]
         return diff
 
     def _conv_acl(self, acl):

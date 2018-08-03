@@ -283,6 +283,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
             'no 110',
             'no 120',
             'no 130',
+            'no 140',  # This one is a duplicate
             'exit',
             'ip access-list SG-OUT-test_security_group',
             'no 20',
@@ -309,6 +310,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
             'no 100',
             'no 110',
             'no 130',
+            'no 140',  # This one is a duplicate
             'exit',
             'ip access-list SG-OUT-test_security_group',
             'permit udp any 100.100.0.0/16 range 0 65535',
@@ -342,6 +344,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
             'no 110',
             'no 120',
             'no 130',
+            'no 140',  # This one is a duplicate
             'exit',
             'ip access-list SG-OUT-test_security_group',
             'no 20',

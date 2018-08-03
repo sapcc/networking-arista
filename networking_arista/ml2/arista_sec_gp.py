@@ -809,8 +809,9 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             for acl in acls:
                 acl['synced'] = True
 
-        diff += ['no ' + acl['text'] for acl in existing_acls if
-                 'synced' not in acl]
+        diff += ['no {}'.format(acl['sequenceNumber'])
+                 for acl in existing_acls
+                 if 'synced' not in acl]
         return diff
 
     def _conv_acl(self, acl):
@@ -866,7 +867,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             return
 
         security_group_id = sg['id']
-        security_group_rules = list(sg['security_group_rules'])
+        security_group_rules = sorted(sg['security_group_rules'])
 
         self._sg_enable_dhcp(security_group_rules)
 

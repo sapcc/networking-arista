@@ -1099,8 +1099,10 @@ class AristaDriver(driver_api.MechanismDriver):
 
 def cli():
     import json
+    import six
     import sys
 
+    from collections import defaultdict
     from neutron.db.models_v2 import Port
     from neutron.plugins.ml2.models import NetworkSegment
     from neutron.plugins.ml2.models import PortBindingLevel
@@ -1126,6 +1128,7 @@ def cli():
     context = get_admin_context()
     ndb = db_lib.NeutronNets()
     confg = config.CONF.ml2_arista
+    confg.http_pool_block = True
 
     api_type = confg['api_type'].upper()
     if api_type == 'EAPI':
@@ -1145,7 +1148,7 @@ def cli():
     PortBindingLevel.segment = relationship(NetworkSegment,
                                             lazy='subquery')
 
-    items = []
+    items = defaultdict(list)
     with context.session.begin():
         session = context.session
         ports = session.query(Port). \
@@ -1183,28 +1186,28 @@ def cli():
                         if level.driver == 'arista'
                         ]
 
-            items.append((device_id, hostname, port_id, network_id, tenant_id,
+            items[device_id].append((hostname, port_id, network_id, tenant_id,
                           port_name, device_owner, sg, orig_sg, vnic_type,
                           segments, bindings, vlan_type))
 
     from eventlet.greenpool import GreenPool as Pool
 
-    def plug((device_id, hostname, port_id, network_id, tenant_id,
-             port_name, device_owner, sg, orig_sg, vnic_type,
-             segments, bindings, vlan_type)):
-        print(port_id)
-        rpc.plug_port_into_network(device_id,
-                                   hostname,
-                                   port_id,
-                                   network_id,
-                                   tenant_id,
-                                   port_name,
-                                   device_owner,
-                                   sg, orig_sg,
-                                   vnic_type,
-                                   segments=segments,
-                                   switch_bindings=bindings,
-                                   vlan_type=vlan_type)
+    def plug((device_id, ports)):
+        # Plug the ports, first the native, then allowed
+        for hostname, port_id, network_id, tenant_id, \
+                port_name, device_owner, sg, orig_sg, vnic_type, \
+                segments, bindings, vlan_type in \
+                sorted(ports, key=lambda x: x[-1] == 'allowed'):
+
+            print('Node: {}: Port {} {}'
+                  .format(device_id, port_id, vlan_type))
+            rpc.plug_port_into_network(
+                device_id, hostname, port_id, network_id, tenant_id, port_name,
+                device_owner, sg, orig_sg, vnic_type,
+                segments=segments,
+                switch_bindings=bindings,
+                vlan_type=vlan_type)
+
     p = Pool(8)
-    for item in p.imap(plug, items):
+    for item in p.imap(plug, six.iteritems(items)):
         pass

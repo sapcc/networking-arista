@@ -2385,7 +2385,7 @@ class AristaRPCWrapperNoCvx(AristaRPCWrapperBase,
                     cmds.extend([
                         'interface %s' % interface,
                         'switchport mode trunk',
-                        'switchport trunk allowed vlan %d' % vlan_id,
+                        'switchport trunk allowed vlan add %d' % vlan_id,
                         'switchport trunk native vlan %d' % vlan_id,
                         'exit',
                     ])

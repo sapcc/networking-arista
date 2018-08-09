@@ -1156,7 +1156,7 @@ def cli():
             options(contains_eager(Port.port_binding_levels))
 
         if config.CONF.port_id:
-            ports.filter(Port.id.in_(config.CONF.port_id))
+            ports = ports.filter(Port.id.in_(config.CONF.port_id))
 
         for port in ports:
             port_id = port.id

@@ -65,6 +65,13 @@ SUPPORTED_SG_ETHERTYPES = ['IPv4']
 DIRECTIONS = ['ingress', 'egress']
 INTERFACE_DIRECTIONS = ['configuredEgressIntfs', 'configuredIngressIntfs']
 
+_ANY_IP_V4 = IPNetwork('0.0.0.0/0')
+
+_ANY_NET = {
+    'IPv4': _ANY_IP_V4,
+    'IPv6': IPNetwork('::/0')
+}
+
 CONF = cfg.CONF
 
 memoize = cfg.BoolOpt('memoize', default=True)
@@ -134,6 +141,62 @@ acl_cmd = {
               'rm_egress': ['interface {0}',
                             'no ip access-group {1} in',
                             'exit']}}
+
+_COMMAND_PARSE_PATTERN = {
+    # This compacts typical setups by using other security groups as
+    # rule
+    # e.g. Match 'permit tcp host 10.180.1.2 any range 10000 10000 syn'
+    False: {
+        'ingress': re.compile(
+            r"^permit (?P<proto>udp|tcp) "
+            r"(?:host )?"
+            r"(?P<host>\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,3})?|any) "
+            r"any "
+            r"range (?P<port_min>\w+) (?P<port_max>\w+)(?: syn)?"
+        ),
+        'egress': re.compile(
+            r"^permit (?P<proto>udp|tcp) "
+            r"any "
+            r"range (?P<port_min>\w+) (?P<port_max>\w+) "
+            r"(?:host )?"
+            r"(?P<host>\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,3})?|any)"
+            r"(?: syn)?"
+        ),
+    },
+    True: {
+        'ingress': re.compile(
+            r"^permit (?P<proto>icmp) "
+            r"(?:host )?"
+            r"(?P<host>\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,3})?|any) "
+            r"any"
+            r"(?: (?P<port_min>\w+))?"
+            r"(?: (?P<port_max>\w+))?$"
+        ),
+        'egress': re.compile(
+            r"^permit (?P<proto>icmp) "
+            r"any "
+            r"(?:host )?"
+            r"(?P<host>\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,3})?|any)"
+            r"(?: (?P<port_min>\w+))?"
+            r"(?: (?P<port_max>\w+))?$"
+        ),
+    }
+}
+
+_COMMAND_FORMAT_PATTERN = {
+    False: {
+        'ingress':
+            'permit {proto} {host} any range {port_min} {port_max} {flags}',
+        'egress':
+            'permit {proto} any {host} range {port_min} {port_max} {flags}'
+    },
+    True: {
+        'ingress':
+            'permit {proto} {host} any {port_min} {port_max}',
+        'egress':
+            'permit {proto} any {host} {port_min} {port_max}'
+    }
+}
 
 
 class AristaSwitchRPCMixin(object):
@@ -702,10 +765,10 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
     @staticmethod
     def _consolidate_ips(consolidation_dict, lossy=False):
         for prot, port_starts in six.iteritems(consolidation_dict):
-            for port_start, port_ends in six.iteritems(port_starts):
-                for port_end, ips in six.iteritems(port_ends):
+            for port_min, port_ends in six.iteritems(port_starts):
+                for port_max, ips in six.iteritems(port_ends):
                     if 'any' in ips:
-                        ipset = IPSet(IPNetwork('0.0.0.0/0'))
+                        ipset = IPSet(_ANY_IP_V4)
                     else:
                         ipset = IPSet(ips)
 
@@ -717,60 +780,55 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                     if lossy:
                         ipset = IPSet([enlarge(network) for network in
                                        ipset.iter_cidrs()])
+                    ipset.compact()
 
                     for net in ipset.iter_cidrs():
-                        if net == IPNetwork('0.0.0.0/0'):
+                        if net.prefixlen == 0:
                             ip = 'any'
-                        elif net.prefixlen == 32:
+                        elif len(net) == 1:
                             ip = 'host ' + str(net.ip)
                         else:
                             ip = str(net)
 
-                        yield (prot,
-                               ip,
-                               port_start,
-                               port_end,
-                               'syn' if prot == 'tcp' else '')
+                        yield {
+                            'proto': prot,
+                            'host': ip,
+                            'port_min': port_min,
+                            'port_max': port_max,
+                            'flags': 'syn' if prot == 'tcp' else ''
+                        }
 
     def _consolidate_cmds(self, cmds, num_rules):
         lossy = 0 < self.max_rules < num_rules
-        r = {
-            # This compacts typical setups by using other security groups as
-            # rule
-            # e.g. Match 'permit tcp host 10.180.1.2 any range 10000 10000 syn'
-            'ingress': re.compile(
-                r"^permit (udp|tcp) (?:host )?"
-                r"(\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:/\d{1,3})?|any) any"
-                r" range (\w+) (\w+)(?: syn)?"),
-            'egress': re.compile(
-                r"^permit (udp|tcp) any range (\w+) (\w+) (?:host )?"
-                r"(\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:/\d{1,3})?|any)"
-                r"(?: syn)?")
-        }
 
         processed_cmds = {'ingress': [], 'egress': []}
         for dir in DIRECTIONS:
             consolidation_dict = defaultdict(
                 lambda: defaultdict(lambda: defaultdict(list)))
             for cmd in cmds[dir]:
-                match = r[dir].match(cmd)
+                icmp = cmd.startswith('permit icmp')
+                match = _COMMAND_PARSE_PATTERN[icmp][dir].match(cmd)
                 if match is not None:
                     # put in consolidation list
-                    if dir == 'ingress':
-                        (prot, host, port_start, port_end) = match.groups()
-                    else:
-                        (prot, port_start, port_end, host) = match.groups()
-                    consolidation_dict[prot][port_start][port_end].append(host)
+                    host = match.group('host')
+                    proto = match.group('proto')
+                    port_min = match.group('port_min')
+                    port_max = match.group('port_max')
+
+                    if icmp:
+                        if port_min is None:
+                            port_min = ''
+                        if port_max is None:
+                            port_max = ''
+
+                    consolidation_dict[proto][port_min][port_max].append(host)
                 else:
                     processed_cmds[dir].append(cmd)
 
             for network in self._consolidate_ips(consolidation_dict, lossy):
-                if dir == 'ingress':
-                    processed_cmds[dir].append(
-                        ("permit %s %s any range %s %s %s" % network).strip())
-                else:
-                    processed_cmds[dir].append(
-                        ("permit %s any %s range %s %s %s" % network).strip())
+                is_icmp = network['proto'] == 'icmp'
+                pattern = _COMMAND_FORMAT_PATTERN[is_icmp][dir]
+                processed_cmds[dir].append(pattern.format(**network).strip())
 
         if lossy:
             LOG.debug("Consolidated ACLs lossy from %d/%d to %d/%d!" %
@@ -782,6 +840,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
     @staticmethod
     def _sg_enable_dhcp(sg_rules):
+        sg_rules = sorted(sg_rules)
         sg_rules.append({'protocol': 'dhcp',
                          'ethertype': 'IPv4',
                          'remote_ip_prefix': None,
@@ -790,6 +849,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                          'port_range_max': 68,
                          'direction': 'both'
                          })
+        return sg_rules
 
     def _create_acl_diff(self, existing_acls, new_acls):
         """Accepts 2 cmd lists and creates a diff between them."""
@@ -869,12 +929,11 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             return
 
         security_group_id = sg['id']
-        security_group_rules = sorted(sg['security_group_rules'])
-
-        self._sg_enable_dhcp(security_group_rules)
+        security_group_rules = self._sg_enable_dhcp(sg['security_group_rules'])
 
         cmds = {'ingress': list(self.aclCreateDict['tcp_established']),
                 'egress': list(self.aclCreateDict['tcp_established'])}
+
         for sgr in security_group_rules:
             cmds['ingress'], cmds['egress'] = self._create_acl_rule(
                 context,

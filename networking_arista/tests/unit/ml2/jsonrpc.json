@@ -731,8 +731,7 @@
             "payload": [],
             "headerStart": false
           }
-        },
-{
+        }, {
           "log": false,
           "sequenceNumber": 140,
           "text": "permit udp any eq bootps any eq bootpc",

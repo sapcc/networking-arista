@@ -84,7 +84,8 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         self.drv._run_openstack_sg_cmds = self.mock_sg_cmds
         self.drv._maintain_connections()
 
-    def test_consolidate_rule_cmds(self):
+    def test_consolidaterule_cmds(self):
+        self.drv.max_rules = 100
         consolidation_target = {
             'tcp': 10,
             'icmp': 9,
@@ -102,25 +103,29 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                 port_min = None
                 port_max = None
 
-            sg = {'id': 'test_security_group',
-                  'tenant_id': '123456789',
-                  'security_group_rules': [
-                      self._get_sg_rule(proto, '10.180.1.%s' % x,
-                                        high_port,
-                                        high_port)
-                      for x in range(0, 256)
-                  ] + [
-                      self._get_sg_rule(proto, '10.180.1.%s' % x,
-                                        high_port,
-                                        high_port)
-                      for x in range(0, 4)
-                  ] + [
-                      self._get_sg_rule(proto, '10.180.1.%s' % x,
-                                        port_min,
-                                        port_max)
-                      for x in range(0, 128)
-                  ]
-                  }
+            sg = {
+                'id': 'test_security_group',
+                'tenant_id': '123456789',
+                'security_group_rules':
+                    [self._get_sg_rule(
+                        proto,
+                        '10.180.1.%s' % x,
+                        high_port,
+                        high_port)
+                        for x in range(0, 256)] +
+                    [self._get_sg_rule(
+                        proto,
+                        '10.180.1.%s' % x,
+                        high_port,
+                        high_port) for x in range(0, 4)] +
+                    [self._get_sg_rule(
+                        proto,
+                        '10.180.1.%s' % x,
+                        port_min,
+                        port_max)
+                        for x in range(0, 128)
+                    ]
+            }
 
             self.mock_sg_cmds.reset_mock()
             context = get_admin_context()
@@ -144,7 +149,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                 )
 
                 self.assertTrue(
-                    ('permit %s 10.180.1.0/24 any range 22 6969%s'
+                    ('permit %s 10.180.1.0/25 any range 22 6969%s'
                      % (proto, flags))
                     in self.mock_sg_cmds.call_args[0][0],
                     'Missing consolidated 10.180.1.0/25 subnet for %s'
@@ -158,6 +163,67 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                     'Missing consolidated 10.180.1.0/24 subnet for %s'
                     % proto
                 )
+
+    def test_consolidate_rule_cmds_max(self):
+        self.drv.max_rules = 1
+        consolidation_target = {
+            'tcp': 10,
+            'icmp': 9,
+            'udp': 12
+        }
+
+        for proto in ('icmp', 'udp', 'tcp'):
+            has_ports = proto != 'icmp'
+            if has_ports:
+                high_port = 10000
+            else:
+                high_port = None
+
+            sg = {
+                'id': 'test_security_group',
+                'tenant_id': '123456789',
+                'security_group_rules':
+                    [self._get_sg_rule(proto,
+                                       '10.180.1.1',
+                                       high_port,
+                                       high_port)]
+                    +
+                    [self._get_sg_rule(proto,
+                                       '192.168.1.1',
+                                       high_port,
+                                       high_port)]
+            }
+
+            self.mock_sg_cmds.reset_mock()
+            context = get_admin_context()
+            self.drv.create_acl(context, sg)
+            self.assertEqual(1, self.mock_sg_cmds.call_count,
+                             'expected to be called once')
+
+            self.assertEqual(
+                consolidation_target[proto],
+                len(self.mock_sg_cmds.call_args[0][0]),
+                'insufficient consolidation for protocol %s' % proto
+            )
+
+            if has_ports:
+                flags = ' syn' if proto == 'tcp' else ''
+                self.assertTrue(
+                    ('permit %s any any range 10000 10000%s'
+                     % (proto, flags))
+                    in self.mock_sg_cmds.call_args[0][0],
+                    'Missing consolidated 10.180.1.0/24 subnet for %s'
+                    % proto
+                )
+            else:
+                self.assertTrue(
+                    ('permit %s any any'
+                     % proto)
+                    in self.mock_sg_cmds.call_args[0][0],
+                    'Missing consolidated any subnet for %s'
+                    % proto
+                )
+        self.drv.max_rules = 100
 
     @staticmethod
     def _get_sg_rule(protocol, remote_ip_prefix, port_range_min=22,

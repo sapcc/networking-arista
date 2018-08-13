@@ -84,14 +84,15 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         self.drv._run_openstack_sg_cmds = self.mock_sg_cmds
         self.drv._maintain_connections()
 
-    def test_consolidate_rule_cmds(self):
+    def test_consolidaterule_cmds(self):
+        self.drv.max_rules = 100
         consolidation_target = {
             'tcp': 10,
+            'udp': 12,
             'icmp': 9,
-            'udp': 12
         }
 
-        for proto in ('icmp', 'udp', 'tcp'):
+        for proto in ('tcp', 'udp', 'icmp'):
             has_ports = proto != 'icmp'
             if has_ports:
                 high_port = 10000
@@ -102,31 +103,35 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                 port_min = None
                 port_max = None
 
-            sg = {'id': 'test_security_group',
-                  'tenant_id': '123456789',
-                  'security_group_rules': [
-                      self._get_sg_rule(proto, '10.180.1.%s' % x,
-                                        high_port,
-                                        high_port)
-                      for x in range(0, 256)
-                  ] + [
-                      self._get_sg_rule(proto, '10.180.1.%s' % x,
-                                        high_port,
-                                        high_port)
-                      for x in range(0, 4)
-                  ] + [
-                      self._get_sg_rule(proto, '10.180.1.%s' % x,
-                                        port_min,
-                                        port_max)
-                      for x in range(0, 128)
-                  ]
-                  }
+            sg = {
+                'id': 'test_security_group',
+                'tenant_id': '123456789',
+                'security_group_rules':
+                    [self._get_sg_rule(
+                        proto,
+                        '10.180.1.%s' % x,
+                        high_port,
+                        high_port)
+                        for x in range(0, 256)] +
+                    [self._get_sg_rule(
+                        proto,
+                        '10.180.1.%s' % x,
+                        high_port,
+                        high_port) for x in range(0, 4)] +
+                    [self._get_sg_rule(
+                        proto,
+                        '10.180.1.%s' % x,
+                        port_min,
+                        port_max)
+                        for x in range(0, 128)]
+            }
 
             self.mock_sg_cmds.reset_mock()
             context = get_admin_context()
             self.drv.create_acl(context, sg)
             self.assertEqual(1, self.mock_sg_cmds.call_count,
                              'expected to be called once')
+
             self.assertEqual(
                 consolidation_target[proto],
                 len(self.mock_sg_cmds.call_args[0][0]),
@@ -142,9 +147,8 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                     'Missing consolidated 10.180.1.0/24 subnet for %s'
                     % proto
                 )
-
                 self.assertTrue(
-                    ('permit %s 10.180.1.0/24 any range 22 6969%s'
+                    ('permit %s 10.180.1.0/25 any range 22 6969%s'
                      % (proto, flags))
                     in self.mock_sg_cmds.call_args[0][0],
                     'Missing consolidated 10.180.1.0/25 subnet for %s'
@@ -158,6 +162,67 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                     'Missing consolidated 10.180.1.0/24 subnet for %s'
                     % proto
                 )
+
+    def test_consolidate_rule_cmds_max(self):
+        consolidation_target = {
+            'tcp': 9,
+            'udp': 10,
+            'icmp': 9,
+        }
+
+        for proto in ('udp', 'tcp', 'icmp'):
+            self.drv.max_rules = 1
+            has_ports = proto != 'icmp'
+            if has_ports:
+                high_port = 10000
+            else:
+                high_port = None
+
+            sg = {
+                'id': 'test_security_group',
+                'tenant_id': '123456789',
+                'security_group_rules':
+                    [self._get_sg_rule(proto,
+                                       '10.180.1.1',
+                                       high_port,
+                                       high_port)]
+                    +
+                    [self._get_sg_rule(proto,
+                                       '192.168.1.1',
+                                       high_port,
+                                       high_port)]
+            }
+
+            self.mock_sg_cmds.reset_mock()
+            context = get_admin_context()
+            self.drv.create_acl(context, sg)
+            self.assertEqual(1, self.mock_sg_cmds.call_count,
+                             'expected to be called once')
+
+            self.assertEqual(
+                consolidation_target[proto],
+                len(self.mock_sg_cmds.call_args[0][0]),
+                'insufficient consolidation for protocol %s' % proto
+            )
+
+            if has_ports:
+                flags = ' syn' if proto == 'tcp' else ''
+                self.assertTrue(
+                    ('permit %s any any range 10000 10000%s'
+                     % (proto, flags))
+                    in self.mock_sg_cmds.call_args[0][0],
+                    'Missing consolidated 10.180.1.0/24 subnet for %s'
+                    % proto
+                )
+            else:
+                self.assertTrue(
+                    ('permit %s any any'
+                     % proto)
+                    in self.mock_sg_cmds.call_args[0][0],
+                    'Missing consolidated any subnet for %s'
+                    % proto
+                )
+        self.drv.max_rules = 100
 
     @staticmethod
     def _get_sg_rule(protocol, remote_ip_prefix, port_range_min=22,
@@ -203,7 +268,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         self.drv.create_acl(context, sg)
         self.assertEqual(1, self.mock_sg_cmds.call_count,
                          'expected to be called once')
-        self.assertEqual([
+        self.assertListEqual([
             'ip access-list SG-IN-test_security_group',
             'permit tcp any any established',
             'permit udp any eq 67 any eq 68',
@@ -327,7 +392,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         # One for creating the group, another one for applying it to the port
         self.assertEqual(2, self.mock_sg_cmds.call_count,
                          'expected to be called once')
-        self.assertEqual([
+        self.assertListEqual([
             'ip access-list SG-IN-test_security_group',
             'permit tcp host 192.168.0.1 any range 22 1025 syn',
             'no 30',
@@ -356,7 +421,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
             'test_security_group': sg}
         self.mock_sg_cmds.reset_mock()
         self.drv.perform_sync_of_sg(context)
-        self.assertEqual([
+        self.assertListEqual([
             'ip access-list SG-IN-test_security_group',
             'permit icmp 100.100.0.0/16 any',
             'no 30',
@@ -366,10 +431,8 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
             'no 140',  # This one is a duplicate
             'exit',
             'ip access-list SG-OUT-test_security_group',
-            'permit udp any 100.100.0.0/16 range 0 65535',
             'no 20',
             'no 30',
-            'no 60',
             'no 70',
             'exit'],
             self.mock_sg_cmds.call_args_list[0][0][0],
@@ -380,7 +443,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                               ['switch1:user:pass', 'switch2:user:pass'],
                               'ml2_arista')
 
-        context = self.mock_port([self._get_sg_rule('tcp', '192.168.0.1')])
+        context = self.mock_port([self._get_sg_rule('tcp', '192.168.0.2')])
         self.mock_sg_cmds.reset_mock()
 
         self.drv.perform_sync_of_sg(context)
@@ -388,9 +451,9 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         # the port
         self.assertEqual(2, self.mock_sg_cmds.call_count,
                          'expected to be called twice')
-        self.assertEqual([
+        self.assertListEqual([
             'ip access-list SG-IN-test_security_group',
-            'permit tcp host 192.168.0.1 any range 22 1025 syn',
+            'permit tcp host 192.168.0.2 any range 22 1025 syn',
             'no 30',
             'no 90',
             'no 100',
@@ -407,7 +470,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
             'exit'],
             self.mock_sg_cmds.call_args_list[0][0][0],
             'unexpected security group rules on Switch 1')
-        self.assertEqual([
+        self.assertListEqual([
             'interface portx',
             'ip access-group SG-IN-test_security_group out',
             'exit',

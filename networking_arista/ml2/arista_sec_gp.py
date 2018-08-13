@@ -95,11 +95,11 @@ acl_cmd = {
     # For a rule 0: protocol, 1: cidr, 2: from_port, 3: to_port, 4: flags
     'acl': {'create': ['ip access-list {0}'],
             'tcp_established': ['permit tcp any any established'],
-            'in_rule': ['permit {0} {1} any range {2} {3} {4}'],
+            'in_rule': ['permit {0} {1} any range {2} {3}{4}'],
             'in_rule_reverse': ['permit {0} any range {2} {3} {1}'],
             'out_rule': ['permit {0} any {1} range {2} {3}'],
-            'out_rule_tcp': ['permit {0} any {1} range {2} {3} {4}'],
-            'out_rule_reverse': ['permit {0} {1} range {2} {3} any {4}'],
+            'out_rule_tcp': ['permit {0} any {1} range {2} {3}{4}'],
+            'out_rule_reverse': ['permit {0} {1} range {2} {3} any{4}'],
             'in_dhcp_rule': ['permit udp {1} eq {2} any eq {3}'],
             'out_dhcp_rule': ['permit udp any eq {3} {1} eq {2}'],
             'in_icmp_custom1': ['permit icmp {0} any {1}'],
@@ -123,10 +123,10 @@ acl_cmd = {
                                      'no permit icmp any {1} {2} {3}',
                                      'exit'],
             'del_in_acl_rule': ['ip access-list {0}',
-                                'no permit {1} {2} any range {3} {4}',
+                                'no permit {1} {2} any range {3}{4}',
                                 'exit'],
             'del_out_acl_rule': ['ip access-list {0}',
-                                 'no permit {1} any {2} range {3} {4}',
+                                 'no permit {1} any {2} range {3}{4}',
                                  'exit']},
 
     'apply': {'ingress': ['interface {0}',
@@ -150,17 +150,19 @@ _COMMAND_PARSE_PATTERN = {
         'ingress': re.compile(
             r"^permit (?P<proto>udp|tcp) "
             r"(?:host )?"
-            r"(?P<host>\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,3})?|any) "
+            r"(?P<host>\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,3})?|any)"
+            r"(?P<src_range> range \w+ \w+)? "
             r"any "
-            r"range (?P<port_min>\w+) (?P<port_max>\w+)(?: syn)?"
+            r"range (?P<port_min>\w+) (?P<port_max>\w+)(?P<flags> syn)?$"
         ),
         'egress': re.compile(
             r"^permit (?P<proto>udp|tcp) "
-            r"any "
-            r"range (?P<port_min>\w+) (?P<port_max>\w+) "
+            r"any"
+            r"(?P<src_range> range \w+ \w+)? "
             r"(?:host )?"
             r"(?P<host>\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,3})?|any)"
-            r"(?: syn)?"
+            r"(?P<dst_range> range \w+ \w+ )?"
+            r"(?P<flags> syn)?$"
         ),
     },
     True: {
@@ -186,9 +188,10 @@ _COMMAND_PARSE_PATTERN = {
 _COMMAND_FORMAT_PATTERN = {
     False: {
         'ingress':
-            'permit {proto} {host} any range {port_min} {port_max} {flags}',
+            'permit {proto} {host}{src_range} '
+            'any range {port_min} {port_max}{flags}',
         'egress':
-            'permit {proto} any {host} range {port_min} {port_max} {flags}'
+            'permit {proto} any{src_range} {host}{dst_range}{flags}'
     },
     True: {
         'ingress':
@@ -197,6 +200,17 @@ _COMMAND_FORMAT_PATTERN = {
             'permit {proto} any {host} {port_min} {port_max}'
     }
 }
+
+
+class HashableDict(dict):
+    def __key(self):
+        return tuple((k, self[k]) for k in sorted(self))
+
+    def __hash__(self):
+        return hash(self.__key())
+
+    def __eq__(self, other):
+        return self.__key() == other.__key()
 
 
 class AristaSwitchRPCMixin(object):
@@ -480,17 +494,17 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             flags = ''
             if direction == 'egress':
                 if protocol == 'tcp':
-                    flags = 'syn'
+                    flags = ' syn'
                     out_rule = self.aclCreateDict['out_rule_tcp']
                     in_rule = []
                 else:
-                    flags = 'range 32768 65535'
+                    flags = ' range 32768 65535'
                     out_rule = self.aclCreateDict['out_rule']
                     in_rule = self.aclCreateDict['out_rule_reverse']
             else:
                 in_rule = self.aclCreateDict['in_rule']
                 if protocol == 'tcp':
-                    flags = 'syn'
+                    flags = ' syn'
                     out_rule = []
                 else:
                     out_rule = self.aclCreateDict['in_rule_reverse']
@@ -763,77 +777,97 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             return None
 
     @staticmethod
-    def _consolidate_ips(consolidation_dict, lossy=False):
-        for prot, port_starts in six.iteritems(consolidation_dict):
-            for port_min, port_ends in six.iteritems(port_starts):
-                for port_max, ips in six.iteritems(port_ends):
-                    if 'any' in ips:
-                        ipset = IPSet(_ANY_IP_V4)
-                    else:
-                        ipset = IPSet(ips)
+    def _consolidate_ips(
+            dir,
+            processed_cmds,
+            consolidation_dict,
+            min_prefixlen=32):
+        fmt = util.PartialFormatter()
 
-                    def enlarge(network):
-                        if network.prefixlen > 24:
-                            network.prefixlen = 24
-                        return network
+        def enlarge(network):
+            network = IPNetwork(network)
+            if network.prefixlen > min_prefixlen:
+                network.prefixlen = min_prefixlen
+            return network
 
-                    if lossy:
-                        ipset = IPSet([enlarge(network) for network in
-                                       ipset.iter_cidrs()])
-                    ipset.compact()
+        min_distance = None
 
-                    for net in ipset.iter_cidrs():
-                        if net.prefixlen == 0:
-                            ip = 'any'
-                        elif len(net) == 1:
-                            ip = 'host ' + str(net.ip)
-                        else:
-                            ip = str(net)
+        for keys, ips in six.iteritems(consolidation_dict):
+            if 'any' in ips:
+                ipset = IPSet(_ANY_IP_V4)
+            else:
+                ipset = IPSet(enlarge(ip) for ip in ips)
 
-                        yield {
-                            'proto': prot,
-                            'host': ip,
-                            'port_min': port_min,
-                            'port_max': port_max,
-                            'flags': 'syn' if prot == 'tcp' else ''
-                        }
+            ipset.compact()
 
-    def _consolidate_cmds(self, cmds, num_rules):
-        lossy = 0 < self.max_rules < num_rules
+            previous = None
+            for net in sorted(ipset.iter_cidrs()):
+                if previous:
+                    distance = net.first - previous.last
+                    if min_distance is None or distance < min_distance:
+                        min_distance = distance
+                previous = net
 
-        processed_cmds = {'ingress': [], 'egress': []}
-        for dir in DIRECTIONS:
-            consolidation_dict = defaultdict(
-                lambda: defaultdict(lambda: defaultdict(list)))
-            for cmd in cmds[dir]:
-                icmp = cmd.startswith('permit icmp')
-                match = _COMMAND_PARSE_PATTERN[icmp][dir].match(cmd)
-                if match is not None:
-                    # put in consolidation list
-                    host = match.group('host')
-                    proto = match.group('proto')
-                    port_min = match.group('port_min')
-                    port_max = match.group('port_max')
-
-                    if icmp:
-                        if port_min is None:
-                            port_min = ''
-                        if port_max is None:
-                            port_max = ''
-
-                    consolidation_dict[proto][port_min][port_max].append(host)
+                if net.prefixlen == 0:
+                    ip = 'any'
+                elif len(net) == 1:
+                    ip = 'host ' + str(net.ip)
                 else:
-                    processed_cmds[dir].append(cmd)
+                    ip = str(net)
 
-            for network in self._consolidate_ips(consolidation_dict, lossy):
-                is_icmp = network['proto'] == 'icmp'
+                is_icmp = keys['proto'] == 'icmp'
                 pattern = _COMMAND_FORMAT_PATTERN[is_icmp][dir]
-                processed_cmds[dir].append(pattern.format(**network).strip())
+                cmd = fmt.format(pattern, host=ip, **keys).strip()
+                processed_cmds[dir].append(cmd)
+        return min_distance
+
+    def _consolidate_cmds(self, cmds):
+        num_ingress = len(cmds['ingress'])
+        num_egress = len(cmds['egress'])
+        num_rules = num_ingress + num_egress - 4
+        lossy = 0 < self.max_rules < num_rules
+        min_prefixlen = 32  # Assumption -> no lossy compression needed
+
+        while True:
+            processed_cmds = {'ingress': [], 'egress': []}
+            min_distance = None
+            for dir in DIRECTIONS:
+                consolidation_dict = defaultdict(list)
+
+                for cmd in cmds[dir]:
+                    icmp = cmd.startswith('permit icmp')
+                    match = _COMMAND_PARSE_PATTERN[icmp][dir].match(cmd)
+                    if match is not None:
+                        items = match.groupdict()
+                        host = items.pop('host')
+                        keyed = HashableDict(items)
+                        consolidation_dict[keyed].append(host)
+                    else:
+                        processed_cmds[dir].append(cmd)
+
+                min_distance_1 = self._consolidate_ips(
+                    dir,
+                    processed_cmds, consolidation_dict,
+                    min_prefixlen
+                )
+
+                if min_distance is None or min_distance < min_distance_1:
+                    min_distance = min_distance_1
+
+            num_rules = len(
+                processed_cmds['ingress']) + len(processed_cmds['egress']) - 4
+
+            if self.max_rules <= 0 or num_rules <= self.max_rules \
+                    or min_distance is None:
+                break
+
+            min_prefixlen -= min_distance.bit_length()
+            cmds = processed_cmds
 
         if lossy:
             LOG.debug("Consolidated ACLs lossy from %d/%d to %d/%d!" %
-                      (len(cmds['ingress']),
-                       len(cmds['egress']),
+                      (num_ingress,
+                       num_egress,
                        len(processed_cmds['ingress']),
                        len(processed_cmds['egress'])))
         return processed_cmds
@@ -862,7 +896,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                 existing_acls))
 
             # new rule? add to doff
-            if len(acls) == 0:
+            if not acls:
                 diff.append(new_acl)
             else:
                 # Mark them as already synced
@@ -914,9 +948,9 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                 acl['ruleFilter']['protocol']].lower(),
             'src': ips['src'],
             'dst': ips['dst'],
-            'flags': 'syn' if acl['ruleFilter']['tcpFlags'] else ''
+            'flags': ' syn' if acl['ruleFilter']['tcpFlags'] else ''
         }
-        return "{action} {protocol} {src} {dst} {flags}".format(**prop).strip()
+        return "{action} {protocol} {src} {dst}{flags}".format(**prop)
 
     def create_acl(self, context, sg,
                    security_group_ips=None, existing_acls=None, switches=None):
@@ -941,12 +975,13 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                 security_group_ips=security_group_ips
             )
 
-        num_rules = {'ingress': len(cmds['ingress']) - 2,
-                     'egress': len(cmds['egress']) - 2}
+        num_rules = {
+            'ingress': len(cmds['ingress']) - 2,
+            'egress': len(cmds['egress']) - 2
+        }
 
         # let's consolidate
-        cmds = self._consolidate_cmds(cmds, num_rules['ingress']
-                                      + num_rules['egress'])
+        cmds = self._consolidate_cmds(cmds)
 
         # Create per server diff and apply
         for server_id, s in six.iteritems(self._server_by_id):
@@ -963,9 +998,10 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
                 acl_name = self._arista_acl_name(security_group_id, dir)
                 if existing_acls is not None:
+                    acls = existing_acls[s].get(acl_name, [])
                     server_diff[dir] = self._create_acl_diff([
                         acl for acl in
-                        existing_acls[s].get(acl_name, [])
+                        acls
                         if acl['text'] not in self.aclCreateDict['create']
                     ], cmds[dir])
 

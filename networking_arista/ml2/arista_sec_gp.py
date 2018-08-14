@@ -763,38 +763,26 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             return None
 
     @staticmethod
-    def _consolidate_ips(
-            dir,
-            processed_cmds,
-            consolidation_dict,
-            min_prefixlen=32):
-
-        def enlarge(network):
-            network = IPNetwork(network)
-            if network.prefixlen > min_prefixlen:
-                network.prefixlen = min_prefixlen
-            return network
-
-        min_distance = None
-
+    def _consolidate_ips(consolidation_dict, lossy=False):
         for prot, port_starts in six.iteritems(consolidation_dict):
             for port_min, port_ends in six.iteritems(port_starts):
                 for port_max, ips in six.iteritems(port_ends):
                     if 'any' in ips:
                         ipset = IPSet(_ANY_IP_V4)
                     else:
-                        ipset = IPSet(enlarge(ip) for ip in ips)
+                        ipset = IPSet(ips)
 
+                    def enlarge(network):
+                        if network.prefixlen > 24:
+                            network.prefixlen = 24
+                        return network
+
+                    if lossy:
+                        ipset = IPSet([enlarge(network) for network in
+                                       ipset.iter_cidrs()])
                     ipset.compact()
 
-                    previous = None
-                    for net in sorted(ipset.iter_cidrs()):
-                        if previous:
-                            distance = net.first - previous.last
-                            if min_distance is None or distance < min_distance:
-                                min_distance = distance
-                        previous = net
-
+                    for net in ipset.iter_cidrs():
                         if net.prefixlen == 0:
                             ip = 'any'
                         elif len(net) == 1:
@@ -802,76 +790,50 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                         else:
                             ip = str(net)
 
-                        is_icmp = prot == 'icmp'
-                        pattern = _COMMAND_FORMAT_PATTERN[is_icmp][dir]
-                        processed_cmds[dir].append(
-                            pattern.format(
-                                proto=prot,
-                                host=ip,
-                                port_min=port_min,
-                                port_max=port_max,
-                                flags='syn' if prot == 'tcp' else ''
-                            ).strip()
-                        )
-        return min_distance
+                        yield {
+                            'proto': prot,
+                            'host': ip,
+                            'port_min': port_min,
+                            'port_max': port_max,
+                            'flags': 'syn' if prot == 'tcp' else ''
+                        }
 
-    def _consolidate_cmds(self, cmds):
-        num_ingress = len(cmds['ingress'])
-        num_egress = len(cmds['egress'])
-        num_rules = num_ingress + num_egress - 4
+    def _consolidate_cmds(self, cmds, num_rules):
         lossy = 0 < self.max_rules < num_rules
-        min_prefixlen = 32 # Assumption -> no lossy compression needed
 
-        while True:
-            processed_cmds = {'ingress': [], 'egress': []}
-            min_distance = None
-            for dir in DIRECTIONS:
-                consolidation_dict = defaultdict(
-                    lambda: defaultdict(lambda: defaultdict(list)))
-                for cmd in cmds[dir]:
-                    icmp = cmd.startswith('permit icmp')
-                    match = _COMMAND_PARSE_PATTERN[icmp][dir].match(cmd)
-                    if match is not None:
-                        # put in consolidation list
-                        host = match.group('host')
-                        proto = match.group('proto')
-                        port_min = match.group('port_min')
-                        port_max = match.group('port_max')
+        processed_cmds = {'ingress': [], 'egress': []}
+        for dir in DIRECTIONS:
+            consolidation_dict = defaultdict(
+                lambda: defaultdict(lambda: defaultdict(list)))
+            for cmd in cmds[dir]:
+                icmp = cmd.startswith('permit icmp')
+                match = _COMMAND_PARSE_PATTERN[icmp][dir].match(cmd)
+                if match is not None:
+                    # put in consolidation list
+                    host = match.group('host')
+                    proto = match.group('proto')
+                    port_min = match.group('port_min')
+                    port_max = match.group('port_max')
 
-                        if icmp:
-                            if port_min is None:
-                                port_min = ''
-                            if port_max is None:
-                                port_max = ''
+                    if icmp:
+                        if port_min is None:
+                            port_min = ''
+                        if port_max is None:
+                            port_max = ''
 
-                        consolidation_dict[proto][port_min][port_max].\
-                            append(host)
-                    else:
-                        processed_cmds[dir].append(cmd)
+                    consolidation_dict[proto][port_min][port_max].append(host)
+                else:
+                    processed_cmds[dir].append(cmd)
 
-                min_distance_1 = self._consolidate_ips(
-                    dir,
-                    processed_cmds, consolidation_dict,
-                    min_prefixlen
-                )
-
-                if min_distance is None or min_distance < min_distance_1:
-                    min_distance = min_distance_1
-
-            num_rules = len(processed_cmds['ingress']) \
-                        + len(processed_cmds['egress']) - 4
-
-            if self.max_rules <= 0 or num_rules <= self.max_rules \
-                    or min_distance is None:
-                break
-
-            min_prefixlen -= min_distance.bit_length()
-            cmds = processed_cmds
+            for network in self._consolidate_ips(consolidation_dict, lossy):
+                is_icmp = network['proto'] == 'icmp'
+                pattern = _COMMAND_FORMAT_PATTERN[is_icmp][dir]
+                processed_cmds[dir].append(pattern.format(**network).strip())
 
         if lossy:
             LOG.debug("Consolidated ACLs lossy from %d/%d to %d/%d!" %
-                      (num_ingress,
-                       num_egress,
+                      (len(cmds['ingress']),
+                       len(cmds['egress']),
                        len(processed_cmds['ingress']),
                        len(processed_cmds['egress'])))
         return processed_cmds
@@ -983,7 +945,8 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                      'egress': len(cmds['egress']) - 2}
 
         # let's consolidate
-        cmds = self._consolidate_cmds(cmds)
+        cmds = self._consolidate_cmds(cmds, num_rules['ingress']
+                                      + num_rules['egress'])
 
         # Create per server diff and apply
         for server_id, s in six.iteritems(self._server_by_id):

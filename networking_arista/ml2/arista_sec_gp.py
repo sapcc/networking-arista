@@ -982,7 +982,10 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
         # let's consolidate
         cmds = self._consolidate_cmds(cmds)
-
+        if 'ids' in sg:
+            sg_id = '-'.join(sg['ids'])
+        else:
+            sg_id = sg['id']
         # Create per server diff and apply
         for server_id, s in six.iteritems(self._server_by_id):
             if switches is not None and server_id not in switches:
@@ -990,7 +993,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             server_diff = cmds.copy()
             for d, dir in enumerate(DIRECTIONS):
                 tags = ['server.id:' + str(server_id),
-                        'security.group:' + sg['id'],
+                        'security.group:' + sg_id,
                         'project.id:' + sg['tenant_id'], 'direction:' + dir
                         ]
                 self._statsd.gauge('networking.arista.security.groups',
@@ -1252,6 +1255,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                 rules = []
                 sg = {
                     'id': self._security_group_name(sg_ids),
+                    'ids': sg_ids,
                     'security_group_rules': rules,
                     'tenant_id': neutron_sgs[sg_ids[0]]['tenant_id']
                 }

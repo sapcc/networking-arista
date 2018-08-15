@@ -975,17 +975,23 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                 security_group_ips=security_group_ips
             )
 
-        num_rules = {
+        num_rules_initial = {
             'ingress': len(cmds['ingress']) - 2,
             'egress': len(cmds['egress']) - 2
         }
 
         # let's consolidate
         cmds = self._consolidate_cmds(cmds)
+
+        num_rules_actual = {
+            'ingress': len(cmds['ingress']) - 2,
+            'egress': len(cmds['egress']) - 2
+        }
+
         if 'ids' in sg:
-            sg_id = '-'.join(sg['ids'])
+            sg_ids = '-'.join(sg['ids'])
         else:
-            sg_id = sg['id']
+            sg_ids = sg['id']
         # Create per server diff and apply
         for server_id, s in six.iteritems(self._server_by_id):
             if switches is not None and server_id not in switches:
@@ -993,11 +999,17 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             server_diff = cmds.copy()
             for d, dir in enumerate(DIRECTIONS):
                 tags = ['server.id:' + str(server_id),
-                        'security.group:' + sg_id,
-                        'project.id:' + sg['tenant_id'], 'direction:' + dir
+                        'security.group:' + sg_ids,
+                        'project.id:' + sg['tenant_id'],
+                        'direction:' + dir,
+                        'phase:initial'
                         ]
                 self._statsd.gauge('networking.arista.security.groups',
-                                   num_rules[dir], tags=tags)
+                                   num_rules_initial[dir], tags=tags)
+
+                tags[-1] = 'phase:actual'
+                self._statsd.gauge('networking.arista.security.groups',
+                                   num_rules_actual[dir], tags=tags)
 
                 acl_name = self._arista_acl_name(security_group_id, dir)
                 if existing_acls is not None:

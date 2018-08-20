@@ -16,7 +16,6 @@ import collections
 import itertools
 import json
 import math
-import os
 import re
 import requests
 import six
@@ -34,25 +33,11 @@ from netaddr import IPSet
 from oslo_cache import core as cache
 from oslo_config import cfg
 from oslo_log import log as logging
-from oslo_utils.importutils import try_import
 
 from networking_arista._i18n import _
 from networking_arista.common import db_lib
 from networking_arista.common import exceptions as arista_exc
 from networking_arista.common import util
-
-dogstatsd = try_import('datadog.dogstatsd')
-
-if not dogstatsd or os.getenv('STATSD_MOCK', False):
-    from mock import Mock
-
-    STATS = Mock()
-else:
-    STATS = dogstatsd.DogStatsd(host=os.getenv('STATSD_HOST', 'localhost'),
-                                port=int(os.getenv('STATSD_PORT', 9125)),
-                                namespace=os.getenv('STATSD_PREFIX',
-                                                    'openstack')
-                                )
 
 LOG = logging.getLogger(__name__)
 
@@ -415,7 +400,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             return
 
         self._validate_config(_('when "sec_group_support" is enabled'))
-        self._statsd = STATS
+        self._statsd = util.STATS
         self.max_rules = cfg.CONF.ml2_arista.get('lossy_consolidation_limit')
 
         self._protocol_table = {
@@ -1151,7 +1136,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         LOG.debug('Executing command on Arista EOS: %s', full_command)
 
         try:
-            # this returns array ofplug_port_into_network
+            # this returns array of plug_port_into_network
             # return values for every command in
             # full_command list
             ret = server(full_command)

@@ -13,11 +13,53 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
+import os
 from oslo_config import cfg
+from oslo_serialization.jsonutils import loads
+from oslo_utils.importutils import try_import
 import requests
+from six.moves.urllib_parse import urlparse
 import string
 
+LOG = logging.getLogger(__name__)
+
 cfg.CONF.import_group('ml2_arista', 'networking_arista.common.config')
+
+dogstatsd = try_import('datadog.dogstatsd')
+
+if not dogstatsd or os.getenv('STATSD_MOCK', False):
+    from mock import Mock
+
+    STATS = Mock()
+else:
+    STATS = dogstatsd.DogStatsd(host=os.getenv('STATSD_HOST', 'localhost'),
+                                port=int(os.getenv('STATSD_PORT', 9125)),
+                                namespace=os.getenv('STATSD_PREFIX',
+                                                    'openstack')
+                                )
+
+
+def measure_hook(r, *args, **kwargs):
+    r.hook_called = True
+    try:
+        host = urlparse(r.url).hostname
+        cmds = loads(r.request.body)['params']['cmds']
+        if len(cmds) == 1:
+            cmd = cmds[0].replace(' ', '_')
+        else:  # First two are enable & configure
+            cmd = cmds[2].split(' ')
+            if cmd[-1].startswith('SG-'):
+                cmd.pop()
+            cmd = ' '.join('_')
+        STATS.timing('networking.arista.request', r.elapsed.total_seconds(),
+                     tags=['host:' + host,
+                           'cmd:' + cmd],
+                     sample_rate=60.0,
+                     )
+    except (AttributeError, KeyError):
+        pass
+    return r
 
 
 def make_http_session():
@@ -50,6 +92,9 @@ def make_http_session():
         pool_maxsize=max_connections,
         pool_block=pool_block,
     ))
+
+    if dogstatsd:
+        s.hooks['response'].append(measure_hook)
 
     return s
 

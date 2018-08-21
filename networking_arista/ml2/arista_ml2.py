@@ -33,6 +33,7 @@ from six import add_metaclass
 from tooz import coordination
 
 from networking_arista._i18n import _, _LI, _LW, _LE
+from networking_arista.common import constants
 from networking_arista.common import db_lib
 from networking_arista.common import exceptions as arista_exc
 from networking_arista.common import util
@@ -40,7 +41,6 @@ from networking_arista.ml2 import arista_sec_gp
 
 LOG = logging.getLogger(__name__)
 
-EOS_UNREACHABLE_MSG = _('Unable to reach EOS')
 DEFAULT_VLAN = 1
 
 # Insert a heartbeat command every 100 commands
@@ -52,22 +52,8 @@ CMD_REGION_SYNC = 'REGION_SYNC'
 CMD_INSTANCE = 'INSTANCE'
 
 # EAPI error messages of interest
-ERR_CVX_NOT_LEADER = 'only available on cluster leader'
 ERR_DVR_NOT_SUPPORTED = 'EOS version on CVX does not support DVR'
 BAREMETAL_NOT_SUPPORTED = 'EOS version on CVX does not support Baremetal'
-
-# Flat network constant
-NETWORK_TYPE_FLAT = 'flat'
-
-
-class InstanceType(object):
-    BAREMETAL = 'baremetal'
-    DHCP = 'dhcp'
-    ROUTER = 'router'
-    VM = 'vm'
-
-    VIRTUAL_INSTANCE_TYPES = [DHCP, ROUTER, VM]
-    BAREMETAL_INSTANCE_TYPES = [BAREMETAL]
 
 
 @add_metaclass(abc.ABCMeta)
@@ -761,7 +747,7 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
                 n['segId'] = net['segmentation_id']
 
             for segment in net['segments']:
-                if segment['network_type'] == NETWORK_TYPE_FLAT:
+                if segment['network_type'] == constants.NETWORK_TYPE_FLAT:
                     continue
                 segmentType = 'static'
                 if segment.get('is_dynamic', False):
@@ -828,7 +814,7 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
                           name, instance_type, hosts):
 
         vlan_type = 'allowed'
-        if instance_type in InstanceType.BAREMETAL_INSTANCE_TYPES:
+        if instance_type in constants.InstanceType.BAREMETAL_INSTANCE_TYPES:
             vlan_type = 'native'
 
         return {
@@ -892,21 +878,21 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
                 device_owner = neutron_port['device_owner']
                 vnic_type = port_profiles[port_id]['vnic_type']
                 if device_owner == n_const.DEVICE_OWNER_DHCP:
-                    instance_type = InstanceType.DHCP
+                    instance_type = constants.InstanceType.DHCP
                     if inst_id not in dhcpInst:
                         dhcpInst[inst_id] = instance
                 elif (device_owner.startswith('compute') or
                       device_owner.startswith('baremetal')):
                     if vnic_type == 'baremetal':
-                        instance_type = InstanceType.BAREMETAL
+                        instance_type = constants.InstanceType.BAREMETAL
                         if inst_id not in baremetalInst:
                             baremetalInst[inst_id] = instance
                     else:
-                        instance_type = InstanceType.VM
+                        instance_type = constants.InstanceType.VM
                         if inst_id not in vmInst:
                             vmInst[inst_id] = instance
                 elif device_owner == n_const.DEVICE_OWNER_DVR_INTERFACE:
-                    instance_type = InstanceType.ROUTER
+                    instance_type = constants.InstanceType.ROUTER
                     if inst_id not in routerInst:
                         routerInst[inst_id] = instance
                 else:
@@ -927,11 +913,13 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
                                               instance_type, v_port['hosts'])
                 portInst.append(port)
 
-                if instance_type in InstanceType.VIRTUAL_INSTANCE_TYPES:
+                if instance_type in \
+                        constants.InstanceType.VIRTUAL_INSTANCE_TYPES:
                     portBinding = self._get_host_bindings(
                         port_id, inst_host, network_id,
                         networkSegments[port_id])
-                elif instance_type in InstanceType.BAREMETAL_INSTANCE_TYPES:
+                elif instance_type in \
+                        constants.InstanceType.BAREMETAL_INSTANCE_TYPES:
                     switch_profile = json.loads(port_profiles[
                                                     port_id]['profile'])
                     portBinding = self._get_switch_bindings(
@@ -976,10 +964,12 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
         return self._send_api_request(path, 'DELETE', data)
 
     def delete_vm_bulk(self, tenant_id, vm_id_list, sync=False):
-        self.delete_instance_bulk(tenant_id, vm_id_list, InstanceType.VM)
+        self.delete_instance_bulk(tenant_id, vm_id_list,
+                                  constants.InstanceType.VM)
 
     def delete_dhcp_bulk(self, tenant_id, dhcp_id_list):
-        self.delete_instance_bulk(tenant_id, dhcp_id_list, InstanceType.DHCP)
+        self.delete_instance_bulk(tenant_id, dhcp_id_list,
+                                  constants.InstanceType.DHCP)
 
     def delete_port(self, port_id, instance_id, instance_type):
         path = ('region/%s/port?portId=%s&id=%s&type=%s' %
@@ -999,15 +989,15 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
                                switch_bindings=None, vlan_type=None):
         device_type = ''
         if device_owner == n_const.DEVICE_OWNER_DHCP:
-            device_type = InstanceType.DHCP
+            device_type = constants.InstanceType.DHCP
         elif (device_owner.startswith('compute')
               or device_owner.startswith('baremetal')):
             if vnic_type == 'baremetal':
-                device_type = InstanceType.BAREMETAL
+                device_type = constants.InstanceType.BAREMETAL
             else:
-                device_type = InstanceType.VM
+                device_type = constants.InstanceType.VM
         elif device_owner == n_const.DEVICE_OWNER_DVR_INTERFACE:
-            device_type = InstanceType.ROUTER
+            device_type = constants.InstanceType.ROUTER
         else:
             LOG.info(_LI('Unsupported device owner: %s'), device_owner)
             return
@@ -1024,9 +1014,9 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
         self._send_api_request(url, 'POST', [instance])
         self._send_api_request('region/' + self.region + '/port', 'POST',
                                [port])
-        if device_type in InstanceType.VIRTUAL_INSTANCE_TYPES:
+        if device_type in constants.InstanceType.VIRTUAL_INSTANCE_TYPES:
             self.bind_port_to_host(port_id, host_id, net_id, segments)
-        elif device_type in InstanceType.BAREMETAL_INSTANCE_TYPES:
+        elif device_type in constants.InstanceType.BAREMETAL_INSTANCE_TYPES:
             self.bind_port_to_switch_interface(port_id, host_id, net_id,
                                                switch_bindings, segments)
             if sg:
@@ -1042,22 +1032,22 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
                                  switch_bindings=None, segments=None):
         device_type = ''
         if device_owner == n_const.DEVICE_OWNER_DHCP:
-            device_type = InstanceType.DHCP
+            device_type = constants.InstanceType.DHCP
         elif (device_owner.startswith('compute') or
               device_owner.startswith('baremetal')):
             if vnic_type == 'baremetal':
-                device_type = InstanceType.BAREMETAL
+                device_type = constants.InstanceType.BAREMETAL
             else:
-                device_type = InstanceType.VM
+                device_type = constants.InstanceType.VM
         elif device_owner == n_const.DEVICE_OWNER_DVR_INTERFACE:
-            device_type = InstanceType.ROUTER
+            device_type = constants.InstanceType.ROUTER
         else:
             LOG.info(_LI('Unsupported device owner: %s'), device_owner)
             return
 
-        if device_type in InstanceType.VIRTUAL_INSTANCE_TYPES:
+        if device_type in constants.InstanceType.VIRTUAL_INSTANCE_TYPES:
             self.unbind_port_from_host(port_id, hostname)
-        elif device_type in InstanceType.BAREMETAL_INSTANCE_TYPES:
+        elif device_type in constants.InstanceType.BAREMETAL_INSTANCE_TYPES:
             self.unbind_port_from_switch_interface(port_id, hostname,
                                                    switch_bindings)
         self.delete_port(port_id, device_id, device_type)
@@ -1205,7 +1195,8 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                 if response.json()['error']['code'] == 1002:
                     for data in response.json()['error']['data']:
                         if type(data) == dict and 'errors' in data:
-                            if ERR_CVX_NOT_LEADER in data['errors'][0]:
+                            if constants.ERR_CVX_NOT_LEADER in \
+                                    data['errors'][0]:
                                 msg = six.u("%s is not the master") % (
                                     self._server_ip)
                                 LOG.info(msg)
@@ -1567,7 +1558,7 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
                     ('dynamic' if seg.get('is_dynamic', False) else 'static'
                     if self.hpb_supported() else ''))
                 for seg in network['segments']
-                if seg['network_type'] != NETWORK_TYPE_FLAT
+                if seg['network_type'] != constants.NETWORK_TYPE_FLAT
             )
             shared_cmd = 'shared' if network['shared'] else 'no shared'
             append_cmd(shared_cmd)
@@ -2114,7 +2105,7 @@ class SyncService(object):
             self._rpc.check_supported_features()
             eos_tenants = self._rpc.get_tenants()
         except arista_exc.AristaRpcError:
-            LOG.warning(EOS_UNREACHABLE_MSG)
+            LOG.warning(constants.EOS_UNREACHABLE_MSG)
             self._force_sync = True
             return
 
@@ -2128,7 +2119,7 @@ class SyncService(object):
             try:
                 self._rpc.delete_tenant_bulk(tenants_to_delete, sync=True)
             except arista_exc.AristaRpcError:
-                LOG.warning(EOS_UNREACHABLE_MSG)
+                LOG.warning(constants.EOS_UNREACHABLE_MSG)
                 self._force_sync = True
                 return
 
@@ -2194,19 +2185,21 @@ class SyncService(object):
                     self._rpc.delete_vm_bulk(tenant, vms_to_delete, sync=True)
                 if routers_to_delete:
                     if self._rpc.bm_and_dvr_supported():
-                        self._rpc.delete_instance_bulk(tenant,
-                                                       routers_to_delete,
-                                                       InstanceType.ROUTER,
-                                                       sync=True)
+                        self._rpc.delete_instance_bulk(
+                            tenant,
+                            routers_to_delete,
+                            constants.InstanceType.ROUTER,
+                            sync=True)
                     else:
                         LOG.info(ERR_DVR_NOT_SUPPORTED)
 
                 if bms_to_delete:
                     if self._rpc.bm_and_dvr_supported():
-                        self._rpc.delete_instance_bulk(tenant,
-                                                       bms_to_delete,
-                                                       InstanceType.BAREMETAL,
-                                                       sync=True)
+                        self._rpc.delete_instance_bulk(
+                            tenant,
+                            bms_to_delete,
+                            constants.InstanceType.BAREMETAL,
+                            sync=True)
                     else:
                         LOG.info(BAREMETAL_NOT_SUPPORTED)
 
@@ -2228,7 +2221,7 @@ class SyncService(object):
                     ]
                     self._rpc.create_network_bulk(tenant, networks, sync=True)
             except arista_exc.AristaRpcError:
-                LOG.warning(EOS_UNREACHABLE_MSG)
+                LOG.warning(constants.EOS_UNREACHABLE_MSG)
                 self._force_sync = True
 
         # Now update the VMs
@@ -2254,7 +2247,7 @@ class SyncService(object):
                                                        port_profiles,
                                                        sync=True)
             except arista_exc.AristaRpcError:
-                LOG.warning(EOS_UNREACHABLE_MSG)
+                LOG.warning(constants.EOS_UNREACHABLE_MSG)
                 self._force_sync = True
 
     def _region_in_sync(self):
@@ -2277,7 +2270,7 @@ class SyncService(object):
                 LOG.info(_LI('OpenStack and EOS are in sync!'))
                 return False
         except arista_exc.AristaRpcError:
-            LOG.warning(EOS_UNREACHABLE_MSG)
+            LOG.warning(constants.EOS_UNREACHABLE_MSG)
             # Force an update incase of an error.
             self._force_sync = True
         return True

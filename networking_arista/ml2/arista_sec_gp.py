@@ -41,8 +41,6 @@ from networking_arista.common import util
 
 LOG = logging.getLogger(__name__)
 
-EOS_UNREACHABLE_MSG = _('Unable to reach EOS')
-
 # Note 'None,null' means default rule - i.e. deny everything
 SUPPORTED_SG_PROTOCOLS = ['tcp', 'udp', 'icmp', 'dhcp', None]
 SUPPORTED_SG_ETHERTYPES = ['IPv4']

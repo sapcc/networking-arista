@@ -19,6 +19,8 @@ EOS_UNREACHABLE_MSG = _('Unable to reach EOS')
 UNABLE_TO_DELETE_PORT_MSG = _('Unable to delete port from EOS')
 UNABLE_TO_DELETE_DEVICE_MSG = _('Unable to delete device')
 
+ERR_DVR_NOT_SUPPORTED = _('EOS version on CVX does not support DVR')
+
 # Constants
 INTERNAL_TENANT_ID = 'INTERNAL-TENANT-ID'
 MECHANISM_DRV_NAME = 'arista'

@@ -26,6 +26,7 @@ from eventlet.greenpool import GreenPool as Pool
 from hashlib import sha1
 from httplib import HTTPException
 
+from netaddr import AddrFormatError
 from netaddr import EUI
 from netaddr import IPNetwork
 from netaddr import IPSet
@@ -769,7 +770,10 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         def enlarge(network):
             network = IPNetwork(network)
             if network.prefixlen > min_prefixlen:
-                network.prefixlen = min_prefixlen
+                try:
+                    network.prefixlen = min_prefixlen
+                except AddrFormatError:
+                    pass
             return network
 
         min_distance = None

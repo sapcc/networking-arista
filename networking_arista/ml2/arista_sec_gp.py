@@ -814,7 +814,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         lossy = 0 < self.max_rules < num_rules
         min_prefixlen = 32  # Assumption -> no lossy compression needed
 
-        while True:
+        while min_prefixlen >= 0:
             processed_cmds = {'ingress': [], 'egress': []}
             min_distance = None
             for dir in DIRECTIONS:

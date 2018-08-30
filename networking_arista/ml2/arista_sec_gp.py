@@ -21,7 +21,6 @@ import requests
 import six
 import socket
 
-from collections import defaultdict
 from copy import copy
 from eventlet.greenpool import GreenPool as Pool
 from hashlib import sha1
@@ -199,7 +198,7 @@ class HashableDict(dict):
 class AristaSwitchRPCMixin(object):
     _SERVER_BY_ID = dict()
     _SERVER_BY_IP = dict()
-    _INTERFACE_MEMBERSHIP = defaultdict(dict)
+    _INTERFACE_MEMBERSHIP = collections.defaultdict(dict)
 
     def __init__(self, *args, **kwargs):
         super(AristaSwitchRPCMixin, self).__init__()
@@ -815,7 +814,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             processed_cmds = {'ingress': [], 'egress': []}
             min_distance = None
             for dir in DIRECTIONS:
-                consolidation_dict = defaultdict(list)
+                consolidation_dict = collections.defaultdict(list)
 
                 for cmd in cmds[dir]:
                     icmp = cmd.startswith('permit icmp')
@@ -1242,7 +1241,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
         # Create the ACLs on Arista Switches
         security_group_ips = {}
-        known_acls = defaultdict(set)
+        known_acls = collections.defaultdict(set)
         for sg_ids, switches in six.iteritems(all_sgs):
             if len(sg_ids) == 1:
                 sg = neutron_sgs[sg_ids[0]]
@@ -1301,7 +1300,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
     def _sync_acls(self, server, port_security_groups, known_acls):
         # Fetches the summary, which is the basis of all the current work
-        port_to_acl = defaultdict(lambda: [None, None])
+        port_to_acl = collections.defaultdict(lambda: [None, None])
         summary = server(['show ip access-lists summary'])[0]
         acls_on_server = set()
         for acl_list in summary['aclList']:

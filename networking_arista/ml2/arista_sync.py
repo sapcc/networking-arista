@@ -107,7 +107,7 @@ class SyncService(object):
 
         if not self._check_leader():
             LOG.info("Not leader")
-            return
+            # return
 
         # Perform sync of Security Groups unconditionally
         try:

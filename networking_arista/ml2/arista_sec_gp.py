@@ -950,6 +950,8 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
         security_group_id = sg['id']
         security_group_rules = self._sg_enable_dhcp(sg['security_group_rules'])
+        security_group_rules = util.optimize_security_group_rules(
+            security_group_rules)
 
         cmds = {'ingress': list(self.aclCreateDict['tcp_established']),
                 'egress': list(self.aclCreateDict['tcp_established'])}

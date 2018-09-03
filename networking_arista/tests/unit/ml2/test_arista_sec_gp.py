@@ -63,6 +63,10 @@ def fake_send_eapi_req(url, cmds):
     return ret
 
 
+def no_optimize(rules):
+    return rules
+
+
 class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
 
     def setUp(self):
@@ -305,7 +309,9 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         self.assertIn('permit udp 192.168.0.1/30 any range 22 1025',
                       self.mock_sg_cmds.call_args[0][0], 'Excepted new rule')
 
-    def test_diff_alot_sgs(self):
+    @mock.patch('networking_arista.common.util.optimize_security_group_rules',
+                side_effect=no_optimize)
+    def test_diff_alot_sgs(self, optimizer):
         sg = {'id': 'test_security_group',
               'tenant_id': '123456789',
               'security_group_rules':

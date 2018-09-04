@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from netaddr import IPNetwork
 from networking_arista._i18n import _
 
 EOS_UNREACHABLE_MSG = _('Unable to reach EOS')
@@ -30,6 +31,13 @@ ERR_CVX_NOT_LEADER = 'only available on cluster leader'
 
 # Flat network constant
 NETWORK_TYPE_FLAT = 'flat'
+
+ANY_IP_V4 = IPNetwork('0.0.0.0/0')
+
+ANY_NET = {
+    'IPv4': ANY_IP_V4,
+    'IPv6': IPNetwork('::/0')
+}
 
 
 class InstanceType(object):

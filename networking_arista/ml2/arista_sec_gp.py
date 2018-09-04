@@ -35,6 +35,7 @@ from oslo_config import cfg
 from oslo_log import log as logging
 
 from networking_arista._i18n import _
+from networking_arista.common.constants import ANY_IP_V4
 from networking_arista.common import db_lib
 from networking_arista.common import exceptions as arista_exc
 from networking_arista.common import util
@@ -47,13 +48,6 @@ SUPPORTED_SG_ETHERTYPES = ['IPv4']
 
 DIRECTIONS = ['ingress', 'egress']
 INTERFACE_DIRECTIONS = ['configuredEgressIntfs', 'configuredIngressIntfs']
-
-_ANY_IP_V4 = IPNetwork('0.0.0.0/0')
-
-_ANY_NET = {
-    'IPv4': _ANY_IP_V4,
-    'IPv6': IPNetwork('::/0')
-}
 
 CONF = cfg.CONF
 
@@ -780,7 +774,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
         for keys, ips in six.iteritems(consolidation_dict):
             if 'any' in ips:
-                ipset = IPSet(_ANY_IP_V4)
+                ipset = IPSet(ANY_IP_V4)
             else:
                 ipset = IPSet(enlarge(ip) for ip in ips)
 

@@ -13,14 +13,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import collections
 import logging
-import netaddr
 import os
-import requests
-import six
 import string
 
+import netaddr
+import requests
+import six
+
+from collections import defaultdict
+from intervaltree import IntervalTree
+from networking_arista.common import constants
 from oslo_config import cfg
 from oslo_serialization.jsonutils import loads
 from oslo_utils.importutils import try_import
@@ -134,10 +137,10 @@ class PartialFormatter(string.Formatter):
 
 def _try_merge_rules(rule0, rule1):
     if rule0.get('protocol') not in ('tcp', 'udp', 'icmp'):
-        return False
+        return
 
     if rule1.get('protocol') not in ('tcp', 'udp', 'icmp'):
-        return False
+        return
 
     is_icmp = rule1.get('protocol') == 'icmp'
 
@@ -145,18 +148,16 @@ def _try_merge_rules(rule0, rule1):
     group1 = rule1.get('remote_group_id')
     prefix0 = rule0.get('remote_ip_prefix')
     prefix1 = rule1.get('remote_ip_prefix')
-    net0 = prefix0 and netaddr.IPNetwork(prefix0)
-    net1 = prefix1 and netaddr.IPNetwork(prefix1)
 
     merged_nets = None
-    if net0 is not None and net1 is not None:
-        merged_nets = netaddr.cidr_merge([net0, net1])
+    if prefix0 is not None and prefix1 is not None:
+        merged_nets = netaddr.cidr_merge([prefix0, prefix1])
 
         if len(merged_nets) == 2:
-            return False
+            return
 
     same_net = (group0 and group0 == group1
-                or merged_nets and net0 == net1)
+                or merged_nets and prefix0 == prefix1)
 
     rule0_min = rule0.get('port_range_min')
     rule0_max = rule0.get('port_range_max')
@@ -170,7 +171,7 @@ def _try_merge_rules(rule0, rule1):
         rule1_max = rule1_max or 65535
 
         if rule0_max + 1 < rule1_min or rule1_max + 1 < rule0_min:
-            return False
+            return
 
     same_ports = rule0_min == rule1_min and rule0_max == rule1_max
 
@@ -184,18 +185,18 @@ def _try_merge_rules(rule0, rule1):
 
         rule0['port_range_min'] = rule_min
         rule0['port_range_max'] = rule_max
-        return True
+        return rule0
 
     # This will merge adjacent networks (with same port ranges)
     if same_ports:
-        rule0['remote_ip_prefix'] = str(merged_nets[0])
-        return True
+        rule0['remote_ip_prefix'] = merged_nets[0]
+        return rule0
 
     # We have an overlap of ports and networks, but we can only merge them
     # If one is contained in the other
 
-    net1_in_net0 = (merged_nets and net1 in net0
-                    or net0 and net0.prefixlen == 0)
+    net1_in_net0 = (merged_nets and prefix1 in prefix0
+                    or prefix0 and prefix0.prefixlen == 0)
 
     ports1_in_ports0 = (
             not is_icmp and rule1_min >= rule0_min and rule1_max <= rule0_max
@@ -204,10 +205,10 @@ def _try_merge_rules(rule0, rule1):
 
     if net1_in_net0 and ports1_in_ports0:
         # rule1 is fully contained in rule0
-        return True  # Nothing to be done
+        return rule0
 
-    net0_in_net1 = (merged_nets and net0 in net1
-                    or net1 and net1.prefixlen == 0)
+    net0_in_net1 = (merged_nets and prefix0 in prefix1
+                    or prefix1 and prefix1.prefixlen == 0)
 
     ports0_in_ports1 = (
             not is_icmp and rule0_min >= rule1_min and rule0_max <= rule1_max
@@ -216,26 +217,87 @@ def _try_merge_rules(rule0, rule1):
     if net0_in_net1 and ports0_in_ports1:
         for k, v in six.iteritems(rule1):
             rule0[k] = v
-        return True
+        return rule0
 
-    return False
+    return
 
 
 def optimize_security_group_rules(rules):
-    grouped_rules = collections.defaultdict(list)
+    grouped_rules = defaultdict(
+        lambda: (defaultdict(list),  # Keyed by sg, cannot merge across sgs
+                 IntervalTree())  # Keyed by ip-range
+    )
     for rule in rules:
-        group = grouped_rules[(rule['direction'],
-                               rule['ethertype'],
-                               rule['protocol'])]
-        for orule in group:
-            if _try_merge_rules(orule, rule):
-                break
+        ethertype = rule['ethertype']
+        sg_list, ip_tree = grouped_rules[(rule['direction'],
+                                          ethertype,
+                                          rule['protocol'])]
+
+        rule = dict(rule)  # Work with a copy, modifying rule in place
+        remote_group_id = rule['remote_group_id']
+        if remote_group_id:
+            # We can only merge security groups of the same id, or...
+            group = sg_list[remote_group_id]
+            merged = None
+            for orule in group:
+                merged = _try_merge_rules(orule, rule)
+                if merged:
+                    break
+
+            net = constants.ANY_NET[ethertype]
+            # Net-ranges covering any ip
+            for orule in [i.data for i in ip_tree.search(net.first)
+                          if i.data['remote_ip_prefix'] == net]:
+                merged = _try_merge_rules(orule, rule)
+                if merged:
+                    break
+
+            if not merged:
+                group.append(rule)
         else:
-            group.append(dict(rule))  # Copy, as we will merge the rules
+            remote_ip_prefix = rule['remote_ip_prefix']
+            if remote_ip_prefix and remote_ip_prefix != 'any':
+                net = netaddr.IPNetwork(remote_ip_prefix)
+            else:
+                net = constants.ANY_NET[ethertype]
+            rule['remote_ip_prefix'] = net
+            begin = net.first
+            end = net.last + 2  # Otherwise it doesn't merge .0/25, .128/25
+
+            while True:
+                # We will break the loop, when we do not find any rule to merge
+                # The else case will add then the rule
+                for orule in ip_tree.search(begin, end):
+                    ip_tree.remove(orule)
+                    merged = _try_merge_rules(orule.data, rule)
+                    if merged:
+                        rule = merged
+                        net = merged['remote_ip_prefix']
+                        begin = net.first
+                        end = net.last + 2
+                        break  # Restart with the merged rule
+                    else:
+                        ip_tree.add(orule)
+                else:
+                    ip_tree.addi(begin, end, rule)
+                    break
+
+            if net.prefixlen == 0:
+                for orules in six.itervalues(sg_list):
+                    # Filter out all rules, which fit the given rule
+                    orules[:] = [orule for orule in orules
+                                 if not _try_merge_rules(orule, rule)]
 
     output = []
-    for g in six.itervalues(grouped_rules):
-        for r in g:
+    for sg_list, ip_tree in six.itervalues(grouped_rules):
+        for rl in six.itervalues(sg_list):
+            for r in rl:
+                output.append(r)
+        for ri in ip_tree:
+            r = ri.data
+            remote_ip_prefix = r['remote_ip_prefix']
+            if remote_ip_prefix:
+                r['remote_ip_prefix'] = str(remote_ip_prefix)
             output.append(r)
 
     return output

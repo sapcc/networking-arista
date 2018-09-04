@@ -15,6 +15,7 @@
 
 from networking_arista.common.util import optimize_security_group_rules
 from networking_arista.tests import base
+from oslo_utils import timeutils
 
 GROUP_ID = 'GROUP-1'
 GROUP_ID_OTHER = 'GROUP-2'
@@ -288,3 +289,35 @@ class TestNetworkingCommonOptimizeSecurityGroupRules(base.TestCase):
 
         res = optimize_security_group_rules(reversed(input))
         self.failIf(res == output)
+
+    @staticmethod
+    def _create_sg_rule(protocol='tcp', remote_ip_prefix=None):
+        return {
+            'direction': 'ingress', 'protocol': protocol,
+            'port_range_max': None,
+            'remote_group_id': None,
+            'remote_ip_prefix': remote_ip_prefix,
+            'port_range_min': None, 'ethertype': u'IPv4'}
+
+    def test_performance(self):
+        num_c_class = 8
+        tcp_rule = self._create_sg_rule('tcp', '192.168.1.3/28')
+        input = [self._create_sg_rule('udp', '192.168.{0}.{1}'.format(j, i))
+                 for j in range(0, num_c_class)
+                 for i in range(0, 256)
+                 ] + [
+            tcp_rule
+        ] + [self._create_sg_rule('udp', '192.168.1.3/28')]
+        expected = [
+            self._create_sg_rule('udp', '192.168.0.0/{}'.format(
+                25 - num_c_class.bit_length()))
+        ] + [tcp_rule]
+
+        timer = timeutils.StopWatch()
+        with timer:
+            output = optimize_security_group_rules(input)
+        self.assertItemsEqual(output, expected)
+        self.assertLessEqual(
+            timer.elapsed(),
+            2.0,
+            "Maximum duration we expect for the number of rules")

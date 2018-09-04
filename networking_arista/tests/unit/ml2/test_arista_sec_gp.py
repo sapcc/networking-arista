@@ -14,7 +14,6 @@
 
 
 import json
-import math
 import mock
 import os
 
@@ -315,9 +314,8 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         sg = {'id': 'test_security_group',
               'tenant_id': '123456789',
               'security_group_rules':
-                  [self._get_sg_rule('udp', '192.168.{0}.{1}'.format(
-                      int(math.floor(r / 256)),
-                      r % 256)) for r in range(1, 256 * 256)
+                  [self._get_sg_rule('udp', '192.168.{0}.{1}'.format(i, j))
+                   for i in range(0, 255) for j in range(0, 255)
                    ] + [self._get_sg_rule('tcp', '192.168.32.3/28')] +
                   [self._get_sg_rule('udp', '192.168.32.3/28')]
               }
@@ -334,9 +332,8 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         sg = {'id': 'test_security_group',
               'tenant_id': '123456789',
               'security_group_rules':
-                  [self._get_sg_rule('udp', '192.168.{0}.{1}'.format(
-                      int(math.floor(r / 256)), r % 256))
-                   for r in range(1, 256 * 256)] +
+                  [self._get_sg_rule('udp', '192.168.{0}.{1}'.format(i, j))
+                   for i in range(0, 255) for j in range(0, 255)] +
                   [self._get_sg_rule('udp', '192.168.32.3/28')] + [
                       self._get_sg_rule('udp', '0.0.0.0/0')]
               }

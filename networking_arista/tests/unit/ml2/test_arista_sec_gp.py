@@ -332,8 +332,8 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         sg = {'id': 'test_security_group',
               'tenant_id': '123456789',
               'security_group_rules':
-                  [self._get_sg_rule('udp', '192.168.{0}.{1}'.format(i, j))
-                   for i in range(0, 256) for j in range(0, 256)] +
+                  [self._get_sg_rule('udp', '192.168.{0}.1'.format(j))
+                   for j in range(0, 256)] +
                   [self._get_sg_rule('udp', '192.168.32.3/28')] + [
                       self._get_sg_rule('udp', '0.0.0.0/0')]
               }

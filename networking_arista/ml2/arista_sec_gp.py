@@ -1140,7 +1140,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             LOG.debug('Results of execution on Arista EOS: %s', ret)
         except Exception as e:
             msg = (_('Error occurred while trying to execute '
-                     'commands %(cmd)s: %(error)') %
+                     'commands %(cmd)s: %(error)s') %
                    {'cmd': full_command, 'error': e.message})
             LOG.exception(msg)
             raise arista_exc.AristaServicePluginRpcError(msg=msg)

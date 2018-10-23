@@ -13,6 +13,7 @@
 #    under the License.
 
 import collections
+import inspect
 import itertools
 import json
 import math
@@ -25,6 +26,7 @@ from copy import copy
 from eventlet.greenpool import GreenPool as Pool
 from hashlib import sha1
 from httplib import HTTPException
+from six.moves.urllib.parse import urlparse
 
 from netaddr import AddrFormatError
 from netaddr import EUI
@@ -197,9 +199,47 @@ class AristaSwitchRPCMixin(object):
 
     def __init__(self, *args, **kwargs):
         super(AristaSwitchRPCMixin, self).__init__()
+        self._statsd = util.STATS
         self._conn_timeout = cfg.CONF.ml2_arista.conn_timeout
         self._verify = cfg.CONF.ml2_arista.verify_ssl
         self._session = kwargs.get('session') or util.make_http_session()
+
+        if self._requests_send_metrics_hook not in \
+                self._session.hooks['response']:
+            self._session.hooks['response'].append(
+                    self._requests_send_metrics_hook)
+
+    def _requests_send_metrics_hook(self, r, *args, **kwargs):
+        """Send request duration to statsd server
+
+        This function should be used as a response hook for the requests
+        library.
+        """
+        # find out callee of _send_eapi_req (but not server())
+        callee_name = "<undefined>"
+        try:
+            eapi_req_found = False
+            for frame in inspect.stack():
+                func_name = frame[3]
+                if not eapi_req_found and func_name == '_send_eapi_req':
+                    eapi_req_found = True
+                elif eapi_req_found and func_name not in ('server', 'wrapped'):
+                    callee_name = func_name
+                    break
+        except Exception:
+            pass
+
+        # parse url to get hostname later on
+        parsed_url = urlparse(r.url)
+
+        tags = [
+            'switch.ip:{}'.format(parsed_url.hostname),
+            'python_callee:{}'.format(callee_name),
+            'http_status_code:{}'.format(r.status_code),
+        ]
+        self._statsd.histogram(
+            'networking.arista.hook.apicall_duration_seconds',
+            r.elapsed.total_seconds(), tags=tags)
 
     def _get_interface_membership(self, server, ports):
         ifm = self._INTERFACE_MEMBERSHIP[server]
@@ -392,7 +432,6 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             return
 
         self._validate_config(_('when "sec_group_support" is enabled'))
-        self._statsd = util.STATS
         self.max_rules = cfg.CONF.ml2_arista.get('lossy_consolidation_limit')
 
         self._protocol_table = {

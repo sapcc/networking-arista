@@ -194,6 +194,7 @@ class AristaSwitchRPCMixin(object):
     _SERVER_BY_ID = dict()
     _SERVER_BY_IP = dict()
     _INTERFACE_MEMBERSHIP = collections.defaultdict(dict)
+    _USED_PC_IDS = collections.defaultdict(list)
 
     def __init__(self, *args, **kwargs):
         super(AristaSwitchRPCMixin, self).__init__()
@@ -201,30 +202,46 @@ class AristaSwitchRPCMixin(object):
         self._verify = cfg.CONF.ml2_arista.verify_ssl
         self._session = kwargs.get('session') or util.make_http_session()
 
+    def _refresh_port_channel_mappings(self, server):
+        ifm = {}
+        used_ids = []
+        port_channel_name_len = len('Port-Channel')
+
+        ret = server(["show port-channel"])
+        if ret and ret[0]:
+            for pc, v in six.iteritems(ret[0]['portChannels']):
+                used_ids.append(int(pc[port_channel_name_len:]))
+
+                # refresh port -> port-channel membership
+                if not v:
+                    continue
+
+                for port in itertools.chain(v['activePorts'],
+                                            v['inactivePorts']):
+                    # ignore MLAG-peer ports. they're configured on the peer
+                    if port.startswith('Peer'):
+                        continue
+
+                    ifm[port] = pc
+
+            self._USED_PC_IDS[server] = used_ids
+            self._INTERFACE_MEMBERSHIP[server] = ifm
+
     def _get_interface_membership(self, server, ports):
         ifm = self._INTERFACE_MEMBERSHIP[server]
         missing = []
         result = dict()
-        for port in ports:
-            if port in ifm:
-                result[port] = ifm[port]
-            else:
-                missing.append(port)
+        for port in itertools.chain(ports, missing):
+            if port not in ifm:
+                # refresh mapping only once and re-try the missing port later
+                if len(missing) == 0:
+                    missing.append(port)
+                    self._refresh_port_channel_mappings(server)
 
-        if not missing:
-            return result
+                continue
 
-        ret = server(["show interfaces " + ",".join(missing)])
-        if ret and ret[0]:
-            for port, v in six.iteritems(ret[0]['interfaces']):
-                if not v:
-                    continue
-                pc = None
-                membership = v.get('interfaceMembership')
-                if membership:
-                    pc = membership.rsplit(' ')[-1]
-                ifm[port] = pc
-                result[port] = pc
+            result[port] = ifm[port]
+
         return result
 
     def _send_eapi_req(self, url, cmds):

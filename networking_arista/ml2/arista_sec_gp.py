@@ -238,7 +238,7 @@ class AristaSwitchRPCMixin(object):
             'http_status_code:{}'.format(r.status_code),
         ]
         self._statsd.histogram(
-            'networking.arista.hook.apicall_duration_seconds',
+            'networking.arista.apicall_http_duration_seconds',
             r.elapsed.total_seconds(), tags=tags)
 
     def _get_interface_membership(self, server, ports):

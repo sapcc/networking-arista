@@ -241,6 +241,19 @@ class AristaSwitchRPCMixin(object):
             'networking.arista.apicall_http_duration_seconds',
             r.elapsed.total_seconds(), tags=tags)
 
+        # look for response timings in API json response
+        try:
+            responses = r.json()
+            exec_duration = 0
+            for response in responses['result']:
+                exec_duration += response['_meta']['execDuration']
+
+            self._statsd.histogram(
+                'networking.arista.apicall_exec_duration_seconds',
+                exec_duration, tags=tags)
+        except Exception:
+            pass
+
     def _get_interface_membership(self, server, ports):
         ifm = self._INTERFACE_MEMBERSHIP[server]
         missing = []

@@ -231,7 +231,8 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
     def plug_port_into_network(self, device_id, host_id, port_id,
                                net_id, tenant_id, port_name, device_owner,
                                sg, orig_sg, vnic_type, segments,
-                               switch_bindings=None, vlan_type=None):
+                               switch_bindings=None, vlan_type=None,
+                               group_info=None):
         if device_owner == n_const.DEVICE_OWNER_DHCP:
             self.plug_dhcp_port_into_network(device_id,
                                              host_id,

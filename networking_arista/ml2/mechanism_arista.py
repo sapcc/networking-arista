@@ -652,9 +652,11 @@ class AristaDriver(driver_api.MechanismDriver):
         binding_profile = port['binding:profile']
         bindings = []
         vlan_type = 'native' if vnic_type == 'baremetal' else 'allowed'
+        group_info = None
         if binding_profile:
             bindings = binding_profile.get('local_link_information', bindings)
             vlan_type = binding_profile.get('vlan_type', vlan_type)
+            group_info = binding_profile.get('local_group_information', group_info)
 
         port_id = port['id']
         port_name = port['name']
@@ -752,7 +754,9 @@ class AristaDriver(driver_api.MechanismDriver):
                                                 vnic_type,
                                                 segments=segments,
                                                 switch_bindings=bindings,
-                                                vlan_type=vlan_type)
+                                                vlan_type=vlan_type,
+                                                group_info=group_info
+                                                )
             else:
                 LOG.info(_LI("Port not plugged into network"))
         except arista_exc.AristaRpcError as err:

@@ -89,7 +89,7 @@ ARISTA_DRIVER_OPTS = [
                 help=_('Should connections be closed, and not re-used')
                 ),
     cfg.BoolOpt('skip_unplug',
-                default=True,
+                default=False,
                 help=_('Should the unplug operation be skipped')),
     cfg.StrOpt('region_name',
                default='RegionOne',

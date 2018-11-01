@@ -86,7 +86,7 @@ class AristaRPCWrapperNoCvx(AristaRPCWrapperBase,
             ]
             # Setup interface with the named VLAN
             for interface in interfaces:
-                if not vlan_type == 'allowed':
+                if vlan_type != 'allowed':
                     cmds.extend([
                         'interface %s' % interface,
                         'switchport mode trunk',

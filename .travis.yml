@@ -8,10 +8,12 @@ matrix:
     env:
     - TOXENV=py27
     - NEUTRON_SOURCE=git+https://github.com/sapcc/neutron.git@stable/mitaka-m3#egg=neutron
+    - UPPER_CONSTRAINTS_FILE=https://raw.githubusercontent.com/sapcc/requirements/stable/mitaka-m3/upper-constraints.txt
   - python: "2.7"
     env:
     - TOXENV=pep8
     - NEUTRON_SOURCE=git+https://github.com/sapcc/neutron.git@stable/mitaka-m3#egg=neutron
+    - UPPER_CONSTRAINTS_FILE=https://raw.githubusercontent.com/sapcc/requirements/stable/mitaka-m3/upper-constraints.txt
 install:
 - pip install tox-travis
 - curl -L https://github.com/Mic92/iana-etc/releases/download/20180420/iana-etc-20180420.tar.gz | tar xvz

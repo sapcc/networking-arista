@@ -140,7 +140,7 @@ _COMMAND_PARSE_PATTERN = {
             r"(?P<src_range> range \w+ \w+)? "
             r"(?:host )?"
             r"(?P<host>\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,3})?|any)"
-            r"(?P<dst_range> range \w+ \w+ )?"
+            r"(?P<dst_range> range \w+ \w+)?"
             r"(?P<flags> syn)?$"
         ),
     },

@@ -1163,7 +1163,9 @@ def cli():
 
     from eventlet.greenpool import GreenPool as Pool
 
-    def plug((device_id, ports)):
+    def plug(device_ports):
+        device_id, ports = device_ports
+
         # Plug the ports, first the native, then allowed
         for hostname, port_id, network_id, tenant_id, \
                 port_name, device_owner, sg, orig_sg, vnic_type, \

@@ -188,8 +188,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                     [self._get_sg_rule(proto,
                                        '10.180.1.1',
                                        high_port,
-                                       high_port)]
-                    +
+                                       high_port)] +
                     [self._get_sg_rule(proto,
                                        '192.168.1.1',
                                        high_port,

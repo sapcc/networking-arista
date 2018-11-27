@@ -559,3 +559,123 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                          'expected to be called once')
         self.assertNotIn('permit tcp any any established',
                          self.mock_sg_cmds.call_args[0][0])
+
+    def test_arista_regex_command_parsing(self):
+        """Test if arista ACLs can be parsed by the secgp regex"""
+        # NOTE: Apparently we only parse / handle permit rules
+        # NOTE: There are some rules which are currently not being parsed, e.g.
+        #       permit udp any eq bootps any eq bootpc # (no eq)
+        #       permit tcp any any established # (unknown tcp flag)
+        #       permit icmp 10.123.32.0/20 any # icmp egress with src != any
+        #       permit udp any host ... # ingres with src=any, dest!=any
+
+        rules = {
+            'ingress': [
+                (
+                    "permit icmp any any",
+                    {'host': 'any', 'port_max': None, 'proto': 'icmp',
+                    'port_min': None}
+                ),
+                (
+                    "permit icmp 10.123.32.0/20 any",
+                    {'host': '10.123.32.0/20', 'port_max': None,
+                    'proto': 'icmp', 'port_min': None}
+                ),
+                (
+                    "permit tcp any any range tcpmux 65535 syn",
+                    {'host': 'any', 'proto': 'tcp', 'src_range': None,
+                    'port_min': 'tcpmux', 'port_max': '65535', 'flags': ' syn'}
+                ),
+                (
+                     "permit tcp 10.123.40.0/22 any range 0 65535 syn",
+                     {'host': '10.123.40.0/22', 'proto': 'tcp',
+                     'src_range': None, 'port_min': '0', 'port_max': '65535',
+                     'flags': ' syn'}
+                ),
+                (
+                     "permit udp 10.123.40.0/22 any range 0 65535",
+                     {'host': '10.123.40.0/22', 'proto': 'udp',
+                     'src_range': None, 'port_min': '0', 'port_max': '65535',
+                     'flags': None}
+                )
+            ],
+            'egress': [
+                (
+                     "permit icmp any any",
+                     {'host': 'any', 'port_max': None, 'proto': 'icmp',
+                     'port_min': None}
+                ),
+                (
+                     "permit tcp any any range 3141 3141 syn",
+                     {'proto': 'tcp', 'src_range': None, 'host': 'any',
+                     'dst_range': ' range 3141 3141', 'flags': ' syn'}
+                ),
+                (
+                     "permit udp any host 10.123.45.67 range 3141 3141",
+                     {'proto': 'udp', 'src_range': None,
+                     'host': '10.123.45.67', 'dst_range': ' range 3141 3141',
+                     'flags': None}
+                ),
+                (
+                     "permit udp any 10.123.45.8/30 range 3141 3141",
+                     {'proto': 'udp', 'src_range': None,
+                     'host': '10.123.45.8/30', 'dst_range': ' range 3141 3141',
+                     'flags': None}
+                ),
+                (
+                     "permit udp any any range ftp ssh",
+                     {'proto': 'udp', 'src_range': None, 'host': 'any',
+                     'dst_range': ' range ftp ssh', 'flags': None}
+                ),
+            ],
+        }
+
+        regexes_to_test = arista_sec_gp._COMMAND_PARSE_PATTERN
+
+        for direction, direction_rules in rules.items():
+            for rule, expected_result in direction_rules:
+                icmp = rule.startswith('permit icmp')
+                m = regexes_to_test[icmp][direction].match(rule)
+                self.assertNotEqual(
+                        None, m,
+                        "Could not parse {dir} rule '{rule}'"
+                        .format(rule=rule, dir=direction))
+                self.assertEqual(
+                        expected_result, m.groupdict(),
+                        "Parsing result for rule did not match")
+
+    def test_lossy_consolidate_cmds(self):
+        rules = {
+            'ingress': [
+                "permit udp host 100.23.23.1 any range 3141 3141",
+                "permit udp host 100.23.23.2 any range 3141 3141",
+                "permit udp host 100.23.23.4 any range 3141 3141",
+                "permit udp host 100.23.23.5 any range 3141 3141",
+                "permit udp host 100.23.23.6 any range 3141 3141",
+                "permit udp host 100.23.23.23 any range 3141 3141",
+                "permit udp 100.23.23.32/27 any range 3141 3141",
+            ],
+            'egress': [
+                # "permit tcp any any range tcpmux 65535 syn",
+                "permit udp any host 100.23.23.1 range 3141 3141",
+                "permit udp any host 100.23.23.2 range 3141 3141",
+                "permit udp any host 100.23.23.4 range 3141 3141",
+                "permit udp any host 100.23.23.5 range 3141 3141",
+                "permit udp any host 100.23.23.8 range 3141 3141",
+                "permit udp any host 100.23.23.12 range 3141 3141",
+                "permit udp any 100.23.23.32/27 range 3141 3141",
+            ]
+        }
+
+        expected_result = {
+            'ingress': [
+                'permit udp 100.23.23.0/26 any range 3141 3141'
+            ],
+            'egress': [
+                'permit udp any 100.23.23.0/26 range 3141 3141',
+            ]
+        }
+
+        self.drv.max_rules = 1
+        ret = self.drv._consolidate_cmds(rules)
+        self.assertEqual(expected_result, ret)

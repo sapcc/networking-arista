@@ -310,7 +310,7 @@ class AristaSwitchRPCMixin(object):
         }
 
         try:
-            LOG.debug("Sending %s", cmds)
+            LOG.debug("Sending %s to switch %s", cmds, switch_ip)
             response = self._session.post(
                 eapi_server_url,
                 verify=self._verify,

@@ -280,13 +280,20 @@ class AristaSwitchRPCMixin(object):
                 result[port] = pc
         return result
 
-    def _send_eapi_req(self, url, cmds):
+    def _send_eapi_req(self, switch_ip, switch_user, switch_pass, cmds):
         # This method handles all EAPI requests (using the requests library)
         # and returns either None or response.json()['result'] from the EAPI
         # request.
         #
         # Exceptions related to failures in connecting/ timeouts are caught
         # here and logged. Other unexpected exceptions are logged and raised
+
+        if switch_pass == "''":
+            switch_pass = ''
+        eapi_server_url = ('https://%s:%s@%s/command-api' %
+                           (switch_user, switch_pass, switch_ip))
+        redacted_eapi_server_url = ('https://%s:%s@%s/command-api' %
+                                    (switch_user, '<redacted>', switch_ip))
 
         params = {
             'timestamps': 'false',
@@ -305,7 +312,7 @@ class AristaSwitchRPCMixin(object):
         try:
             LOG.debug("Sending %s", cmds)
             response = self._session.post(
-                url,
+                eapi_server_url,
                 verify=self._verify,
                 timeout=self._conn_timeout,
                 json=data)
@@ -317,23 +324,23 @@ class AristaSwitchRPCMixin(object):
                 raise arista_exc.AristaRpcError(msg=msg)
         except requests.exceptions.ConnectTimeout:
             msg = (_('Timed out while trying to connect to %(url)s') %
-                   {'url': url})
+                   {'url': redacted_eapi_server_url})
             LOG.warning(msg)
             return None
         except requests.exceptions.ReadTimeout:
             msg = (_('Timed out while reading from %(url)s') %
-                   {'url': url})
+                   {'url': redacted_eapi_server_url})
             LOG.warning(msg)
             return None
         except requests.exceptions.ConnectionError as e:
             msg = (_('Error while trying to connect to %(url)s'
                      'due to %(reason)s') %
-                   {'url': url, 'reason': e})
+                   {'url': redacted_eapi_server_url, 'reason': e})
             LOG.warning(msg)
             return None
         except requests.exceptions.InvalidURL:
             msg = (_('Ignore attempt to connect to invalid URL %(url)s') %
-                   {'url': url})
+                   {'url': redacted_eapi_server_url})
             LOG.warning(msg)
             return None
         except ValueError:
@@ -377,13 +384,10 @@ class AristaSwitchRPCMixin(object):
         AristaSwitchRPCMixin._SERVER_BY_IP = server_by_ip
 
     def _connect_to_switch(self, switch_ip, switch_user, switch_pass):
-        if switch_pass == "''":
-            switch_pass = ''
-        eapi_server_url = ('https://%s:%s@%s/command-api' %
-                           (switch_user, switch_pass, switch_ip))
         try:
             def server(cmds):
-                return self._send_eapi_req(eapi_server_url, cmds)
+                return self._send_eapi_req(switch_ip, switch_user, switch_pass,
+                                           cmds)
 
             @MEMOIZE
             def get_lldp_info(_):

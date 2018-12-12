@@ -36,11 +36,11 @@ def setup_config():
     cfg.CONF.set_override('coordinator_url', None, 'ml2_arista')
 
 
-def fake_send_eapi_req(url, cmds):
+def fake_send_eapi_req(switch_ip, switch_user, switch_pass, cmds):
     ret = []
     for cmd in cmds:
         if 'show lldp local-info management 1' == cmd:
-            if 'switch2' in url:
+            if switch_ip == 'switch2':
                 ret.append({'chassisId': '02-34-56-78-90-12'})
             else:
                 ret.append({'chassisId': '01-23-45-67-89-01'})
@@ -49,7 +49,7 @@ def fake_send_eapi_req(url, cmds):
             ret.append(json.load(open(cur_dir + '/jsonrpc.json')))
 
             # add make some diff between routers
-            if 'switch2' in url:
+            if switch_ip == 'switch2':
                 ret[len(ret) - 1]['aclList'][0]['sequence'] = []
         elif 'show ip access-lists summary' == cmd:
             ret.append({'aclList': [

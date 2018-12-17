@@ -491,10 +491,8 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         self.drv.perform_sync_of_sg(context)
         self.assertListEqual([
             'ip access-list SG-IN-test_security_group',
-            'permit icmp 100.100.0.0/16 any',
             'no 30',
             'no 100',
-            'no 110',
             'no 130',
             'no 140',  # This one is a duplicate
             'exit',

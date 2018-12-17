@@ -7,7 +7,7 @@ jsonrpclib
 requests
 netaddr     # BSD
 neutron-lib # Apache-2.0
-intervaltree    # Apache-2.0
+intervaltree<3  # Apache-2.0
 oslo.log    # Apache-2.0
 pbr>=1.6
 six

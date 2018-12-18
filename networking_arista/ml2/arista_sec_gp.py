@@ -957,12 +957,13 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
             if acl['ruleFilter'][selector]['mask'] == 0:
                 ip = 'any'
-            elif acl['ruleFilter'][selector]['mask'] == 1 << 32:
+            elif acl['ruleFilter'][selector]['mask'] == ((1 << 32) - 1):
                 ip = 'host ' + acl['ruleFilter'][selector]['ip']
             else:
-                cidr_mask = int(
-                    math.ceil(
-                        math.log(acl['ruleFilter'][selector]['mask'], 2)))
+                # convert netmask integer to CIDR notation
+                # we do this by inverting the mask, then "count" the 1s via log
+                mask_int = acl['ruleFilter'][selector]['mask']
+                cidr_mask = 32 - int(math.log((0xFFFFFFFF ^ mask_int) + 1, 2))
                 ip = acl['ruleFilter'][selector]['ip'] + '/' + str(cidr_mask)
 
             if acl['ruleFilter'][dir + 'Port']['oper'] == 'any':

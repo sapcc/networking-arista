@@ -327,6 +327,72 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         self.assertTrue(len(self.mock_sg_cmds.call_args[0][0]) < 100,
                         "Consolidation doesn't work")
 
+    def test_rule_conversion(self):
+        rules = [
+            (
+                # IP subnets without host address set break everything
+                "permit udp any range 0 65535 10.180.20.59/27",
+                {'action': 'permit',
+                 'ruleFilter': {'destination': {'ip': '10.180.20.59',
+                   'mask': 4294967264},
+                  'dstPort': {'maxPorts': 10, 'oper': 'any', 'ports': []},
+                  'protocol': 17,
+                  'source': {'ip': '0.0.0.0', 'mask': 0},
+                  'srcPort': {'maxPorts': 10, 'oper': 'range',
+                    'ports': [0, 65535]},
+                  'tcpFlags': 0},
+                 'sequenceNumber': 140,
+                 'text': 'permit udp any range 0 65535 10.180.20.32/27'},
+            ),
+            (
+                # named ports can be a problem (tcpmux, ssh)
+                "permit tcp any 9.8.7.0/24 range 1 22 syn",
+                {'action': 'permit',
+                 'ruleFilter': {'destination': {'ip': '9.8.7.0',
+                   'mask': 4294967040},
+                  'dstPort': {'maxPorts': 10, 'oper': 'range',
+                   'ports': [1, 22]},
+                  'protocol': 6,
+                  'source': {'ip': '0.0.0.0', 'mask': 0},
+                  'srcPort': {'maxPorts': 10, 'oper': 'any', 'ports': []},
+                  'tcpFlags': 2},
+                 'sequenceNumber': 150,
+                 'text': 'permit tcp any 9.8.7.0/24 range tcpmux ssh syn'}
+            ),
+            (
+                'permit icmp any any',
+                {'action': 'permit',
+                 'ruleFilter': {'destination': {'ip': '0.0.0.0', 'mask': 0},
+                  'dstPort': {'maxPorts': 10, 'oper': 'any', 'ports': []},
+                  'icmp': {'code': 65535, 'type': 65535},
+                  'protocol': 1,
+                  'source': {'ip': '0.0.0.0', 'mask': 0},
+                  'srcPort': {'maxPorts': 10, 'oper': 'any', 'ports': []},
+                  'tcpFlags': 0},
+                 'sequenceNumber': 30,
+                 'text': 'permit icmp any any'},
+
+            ),
+            (
+                'permit tcp host 1.2.3.4 range 23 42 any syn',
+                {'action': 'permit',
+                 'payload': {'headerStart': False, 'payload': []},
+                 'ruleFilter': {'destination': {'ip': '0.0.0.0', 'mask': 0},
+                  'dstPort': {'maxPorts': 10, 'oper': 'any', 'ports': []},
+                  'icmp': {'code': 65535, 'type': 65535},
+                  'protocol': 6,
+                  'source': {'ip': '1.2.3.4', 'mask': 4294967295},
+                  'srcPort': {'maxPorts': 10, 'oper': 'range',
+                   'ports': [23, 42]},
+                  'tcpFlags': 2},
+                 'sequenceNumber': 10,
+                 'text': 'permit tcp host 1.2.3.4 range telnet 42 any syn'}
+            ),
+        ]
+
+        for driver_rule, switch_rule in rules:
+            self.assertEqual(driver_rule, self.drv._conv_acl(switch_rule))
+
     def test_allow_all(self):
         sg = {'id': 'test_security_group',
               'tenant_id': '123456789',
@@ -425,10 +491,8 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         self.drv.perform_sync_of_sg(context)
         self.assertListEqual([
             'ip access-list SG-IN-test_security_group',
-            'permit icmp 100.100.0.0/16 any',
             'no 30',
             'no 100',
-            'no 110',
             'no 130',
             'no 140',  # This one is a duplicate
             'exit',

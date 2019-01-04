@@ -979,13 +979,21 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                     [str(port) for port in
                      acl['ruleFilter'][dir + 'Port']['ports']]))
 
+        flags = ''
+        if acl['ruleFilter']['tcpFlags']:
+            flags = ' syn'
+        elif acl['ruleFilter']['protocol'] == 1 and (
+                acl['ruleFilter']['icmp']['code'] not in (0, 65535) or
+                acl['ruleFilter']['icmp']['type'] not in (0, 65535)):
+            flags = ' {code} {type}'.format(**acl['ruleFilter']['icmp'])
+
         prop = {
             'action': acl['action'],
             'protocol': self._protocol_table[
                 acl['ruleFilter']['protocol']].lower(),
             'src': ips['src'],
             'dst': ips['dst'],
-            'flags': ' syn' if acl['ruleFilter']['tcpFlags'] else ''
+            'flags': flags,
         }
         return "{action} {protocol} {src} {dst}{flags}".format(**prop)
 

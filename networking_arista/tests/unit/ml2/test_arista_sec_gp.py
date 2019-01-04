@@ -388,6 +388,19 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                  'sequenceNumber': 10,
                  'text': 'permit tcp host 1.2.3.4 range telnet 42 any syn'}
             ),
+            (
+                'permit icmp 10.180.50.0/22 any 22 22',
+                {'action': 'permit',
+                 'ruleFilter': {'destination': {'ip': '0.0.0.0', 'mask': 0},
+                  'dstPort': {'maxPorts': 10, 'oper': 'any', 'ports': []},
+                  'icmp': {'code': 22, 'type': 22},
+                  'protocol': 1,
+                  'source': {'ip': '10.180.50.0', 'mask': 4294966272},
+                  'srcPort': {'maxPorts': 10, 'oper': 'any', 'ports': []},
+                  'tcpFlags': 0},
+                 'sequenceNumber': 320,
+                 'text': 'permit icmp 10.180.48.0/22 any 22 22'},
+            ),
         ]
 
         for driver_rule, switch_rule in rules:

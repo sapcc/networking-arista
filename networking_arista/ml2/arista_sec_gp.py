@@ -180,6 +180,10 @@ _COMMAND_FORMAT_PATTERN = {
     }
 }
 
+_IP_ACL_SUBNET_RE = re.compile(r"(?:^| )"
+                               r"(?P<net>\d+\.\d+\.\d+\.\d+/\d+)"
+                               r"(?= |$)")
+
 
 class HashableDict(dict):
     def __key(self):
@@ -921,14 +925,31 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                          })
         return sg_rules
 
+    @staticmethod
+    def _clear_hostbits_from_acl(rule):
+        """Find ip subnets in ACLs and clear hostbits, if present"""
+        for net_str in _IP_ACL_SUBNET_RE.findall(rule):
+            net = IPNetwork(net_str)
+            # check if hostbits are set
+            if net.ip != net.network:
+                rule = re.sub(
+                            '(^| ){}( |$)'.format(re.escape(net_str)),
+                            r'\g<1>{}\g<2>'.format(str(net.cidr)),
+                            rule)
+
+        return rule
+
     def _create_acl_diff(self, existing_acls, new_acls):
         """Accepts 2 cmd lists and creates a diff between them."""
 
         diff = []
         for new_acl in new_acls:
             # find all acls in existing set
+            new_acl_without_hostbits = self._clear_hostbits_from_acl(new_acl)
             acls = list(filter(
-                lambda x: x['text'] == new_acl or self._conv_acl(x) == new_acl,
+                lambda x: (x['text'] == new_acl or
+                           x['text'] == new_acl_without_hostbits or
+                           self._conv_acl(x) == new_acl),
                 existing_acls))
 
             # new rule? add to doff

@@ -756,3 +756,42 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         self.drv.max_rules = 1
         ret = self.drv._consolidate_cmds(rules)
         self.assertEqual(expected_result, ret)
+
+    def test_clear_hostbits_from_acl(self):
+        rules = [
+            # rules that should match
+            ("permit icmp 10.180.50.0/22 any 22 22",
+             "permit icmp 10.180.48.0/22 any 22 22"),
+            ("permit icmp 1.2.3.4/20 any 22 22",
+             "permit icmp 1.2.0.0/20 any 22 22"),
+
+            # rules with multiple subnets (not found in production yet)
+            ("permit icmp 10.180.50.0/22 1.2.3.4/20 22 22",
+             "permit icmp 10.180.48.0/22 1.2.0.0/20 22 22"),
+            ("foo 1.2.3.4/20 bar 4.5.6.7/24",
+             "foo 1.2.0.0/20 bar 4.5.6.0/24"),
+
+            # subnets at beginning and end
+            ("1.2.3.4/20",
+             "1.2.0.0/20"),
+            ("1.2.3.4/20 4.5.6.7/24",
+             "1.2.0.0/20 4.5.6.0/24"),
+
+            # same subnet multiple times
+            ("foo 1.2.3.4/20 bar 1.2.3.4/20 baz",
+             "foo 1.2.0.0/20 bar 1.2.0.0/20 baz"),
+
+            # overlapping strings
+            ("1.2.3.4/2 1.2.3.4/20",
+             "0.0.0.0/2 1.2.0.0/20"),
+
+            # rules that should stay the same
+            ("permit icmp 10.180.48.0/22 any 22 22",
+             "permit icmp 10.180.48.0/22 any 22 22"),
+            ("permit icmp host 1.2.3.4 any 22 22",
+             "permit icmp host 1.2.3.4 any 22 22"),
+        ]
+
+        for rule, expected_result in rules:
+            result = self.drv._clear_hostbits_from_acl(rule)
+            self.assertEqual(expected_result, result)

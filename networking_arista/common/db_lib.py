@@ -16,9 +16,10 @@
 from neutron.db import db_base_plugin_v2
 from neutron.db.securitygroups_rpc_base import SecurityGroupServerRpcMixin
 from neutron.plugins.common import constants as p_const
-from neutron.plugins.ml2 import db as segments_db
-from neutron.plugins.ml2 import driver_api
+from neutron.db import segments_db
+from neutron_lib.plugins.ml2 import api
 from neutron.plugins.ml2 import models as ml2_models
+from neutron.db.models import segment as segments_model
 from sqlalchemy import literal
 
 from networking_arista.common import db as db_models
@@ -428,7 +429,7 @@ def get_port_binding_level(context, filters):
 
 def get_network_segments_by_port_id(context, port_id):
     session = context.session
-    segments = (session.query(ml2_models.NetworkSegment,
+    segments = (session.query(segments_model.NetworkSegment,
                               ml2_models.PortBindingLevel).
                 join(ml2_models.PortBindingLevel).
                 filter_by(port_id=port_id).
@@ -472,17 +473,16 @@ class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,
     def get_shared_network_owner_id(self, context, network_id):
         filters = {'id': [network_id]}
         nets = self.get_networks(filters=filters, context=context) or []
-        segments = segments_db.get_network_segments(context.session,
-                                                    network_id)
+        segments = segments_db.get_network_segments(context, network_id)
+
         if not nets or not segments:
             return
         if (nets[0]['shared'] and
-                segments[0][driver_api.NETWORK_TYPE] == p_const.TYPE_VLAN):
+                segments[0][api.NETWORK_TYPE] == p_const.TYPE_VLAN):
             return nets[0]['tenant_id']
 
     def get_network_segments(self, context, network_id, dynamic=False):
-        db_session = context.session
-        segments = segments_db.get_network_segments(db_session, network_id,
+        segments = segments_db.get_network_segments(context, network_id,
                                                     filter_dynamic=dynamic)
         if dynamic:
             for segment in segments:

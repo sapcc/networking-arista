@@ -17,10 +17,10 @@ import threading
 
 from neutron.api.rpc.agentnotifiers import l3_rpc_agent_api
 from neutron.api.rpc.handlers import l3_rpc
-from neutron.common import constants as n_const
+from neutron_lib import constants as n_const
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
-from neutron import context as nctx
+from neutron_lib import context as nctx
 from neutron.db import db_base_plugin_v2
 from neutron.db import extraroute_db
 from neutron.db import l3_agentschedulers_db

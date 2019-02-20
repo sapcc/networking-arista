@@ -21,8 +21,8 @@ import requests
 import six
 import socket
 
-from neutron.common import constants as n_const
-from neutron.extensions import portbindings
+from neutron_lib import constants as n_const
+from neutron_lib.api.definitions import portbindings
 
 from networking_arista._i18n import _, _LI, _LW, _LE
 from networking_arista.common import constants

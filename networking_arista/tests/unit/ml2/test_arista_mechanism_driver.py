@@ -21,10 +21,10 @@ import mock
 import neutron.db.api as db
 
 from mock import patch
-from neutron.common import constants as n_const
-from neutron.context import get_admin_context
-from neutron.extensions import portbindings
-from neutron.plugins.ml2 import driver_api as api
+from neutron_lib import constants as n_const
+from neutron_lib.context import get_admin_context
+from neutron_lib.api.definitions import portbindings
+from neutron_lib.plugins.ml2 import api
 from neutron.tests import base
 from neutron.tests.unit import testlib_api
 from oslo_config import cfg
@@ -1849,7 +1849,7 @@ class FakeNetworkContext(object):
         self._segments = segments
         self.is_admin = False
         self.tenant_id = network['tenant_id']
-        self.session = db.get_session()
+        self.session = db.get_writer_session()
         self._plugin_context = FakePluginContext(
             self.tenant_id) if context is None else context
 

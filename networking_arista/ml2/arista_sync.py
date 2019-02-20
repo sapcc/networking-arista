@@ -16,7 +16,7 @@
 import os
 import six
 
-from neutron import context as neutron_context
+from neutron_lib import context as neutron_context
 from oslo_config import cfg
 from oslo_log import log as logging
 from tooz import coordination

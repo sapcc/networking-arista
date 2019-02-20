@@ -20,14 +20,15 @@ if not os.environ.get('DISABLE_EVENTLET_PATCHING'):
     eventlet.monkey_patch()
 
 from neutron.common import config as common_config
-from neutron.common import constants as n_const
-from neutron.context import get_admin_context
+from neutron_lib import constants as n_const
+
+from neutron_lib.context import get_admin_context
 from neutron.db import models_v2
 from neutron.db import securitygroups_db as sg_db
-from neutron.extensions import portbindings
-from neutron.plugins.common import constants as p_const
+from neutron_lib.api.definitions import portbindings
+from neutron_lib import constants as p_const
 from neutron.plugins.ml2.common import exceptions as ml2_exc
-from neutron.plugins.ml2 import driver_api
+from neutron_lib.plugins.ml2 import api
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_service import loopingcall
@@ -56,7 +57,7 @@ def pretty_log(tag, obj):
     pass
 
 
-class AristaDriver(driver_api.MechanismDriver):
+class AristaDriver(api.MechanismDriver):
     """Ml2 Mechanism driver for Arista networking hardware.
 
     Remembers all networks and VMs that are provisioned on Arista Hardware.
@@ -114,7 +115,7 @@ class AristaDriver(driver_api.MechanismDriver):
         if not self.rpc.hpb_supported():
             # Hierarchical port binding is not supported by CVX, only
             # allow VLAN network type.
-            if segments[0][driver_api.NETWORK_TYPE] != p_const.TYPE_VLAN:
+            if segments[0][api.NETWORK_TYPE] != p_const.TYPE_VLAN:
                 return
 
         network_id = network['id']
@@ -227,7 +228,7 @@ class AristaDriver(driver_api.MechanismDriver):
         if not self.rpc.hpb_supported():
             # Hierarchical port binding is not supported by CVX, only
             # send the request if network type is VLAN.
-            if segments[0][driver_api.NETWORK_TYPE] != p_const.TYPE_VLAN:
+            if segments[0][api.NETWORK_TYPE] != p_const.TYPE_VLAN:
                 # If network type is not VLAN, do nothing
                 return
         network_id = network['id']
@@ -300,9 +301,9 @@ class AristaDriver(driver_api.MechanismDriver):
 
         vif_details = {
             portbindings.VIF_DETAILS_VLAN: str(
-                segment[driver_api.SEGMENTATION_ID])
+                segment[api.SEGMENTATION_ID])
         }
-        context.set_binding(segment[driver_api.ID],
+        context.set_binding(segment[api.ID],
                             portbindings.VIF_TYPE_OTHER,
                             vif_details,
                             p_const.ACTIVE)
@@ -322,7 +323,7 @@ class AristaDriver(driver_api.MechanismDriver):
         port = context.current
         physnet_info = {}
         for segment in context.segments_to_bind:
-            physnet = segment.get(driver_api.PHYSICAL_NETWORK)
+            physnet = segment.get(api.PHYSICAL_NETWORK)
             if not self._is_in_managed_physnets(physnet):
                 LOG.debug("bind_port for port %(port)s: physical_network "
                           "%(physnet)s is not managed by Arista "
@@ -349,7 +350,7 @@ class AristaDriver(driver_api.MechanismDriver):
 
                 continue
 
-            if segment[driver_api.NETWORK_TYPE] == p_const.TYPE_VXLAN:
+            if segment[api.NETWORK_TYPE] == p_const.TYPE_VXLAN:
                 # Check if CVX supports HPB
                 if not self.rpc.hpb_supported():
                     LOG.debug("bind_port: HPB is not supported")
@@ -423,15 +424,15 @@ class AristaDriver(driver_api.MechanismDriver):
         segment is included in the managed physical network list.
         """
         if not self.managed_physnets:
-            return [binding_level.get(driver_api.BOUND_SEGMENT) for
+            return [binding_level.get(api.BOUND_SEGMENT) for
                     binding_level in context.binding_levels or []]
 
         bound_segments = []
         for binding_level in (context.binding_levels or []):
-            bound_segment = binding_level.get(driver_api.BOUND_SEGMENT)
+            bound_segment = binding_level.get(api.BOUND_SEGMENT)
             if (bound_segment and
                 self._is_in_managed_physnets(
-                    bound_segment.get(driver_api.PHYSICAL_NETWORK))):
+                    bound_segment.get(api.PHYSICAL_NETWORK))):
                 bound_segments.append(bound_segment)
         return bound_segments
 
@@ -572,14 +573,14 @@ class AristaDriver(driver_api.MechanismDriver):
         plugin_context = context._plugin_context
         for seg in seg_info:
             if not self._network_provisioned(context, tenant_id, network_id,
-                                             seg[driver_api.SEGMENTATION_ID],
-                                             seg[driver_api.ID]):
+                                             seg[api.SEGMENTATION_ID],
+                                             seg[api.ID]):
                 LOG.info(
                     _LI("Adding %s to provisioned network database"), seg)
                 db_lib.remember_tenant(plugin_context, tenant_id)
                 db_lib.remember_network_segment(
                     plugin_context, tenant_id, network_id,
-                    seg[driver_api.SEGMENTATION_ID], seg[driver_api.ID])
+                    seg[api.SEGMENTATION_ID], seg[api.ID])
 
         port_down = False
         if (new_port['device_owner'] ==
@@ -695,7 +696,7 @@ class AristaDriver(driver_api.MechanismDriver):
         for seg in seg_info:
             if not self._network_provisioned(context, tenant_id, network_id,
                                              segmentation_id=seg[
-                                                 driver_api.SEGMENTATION_ID]):
+                                                 api.SEGMENTATION_ID]):
                 net_provisioned = False
                 break
         segments = []
@@ -925,8 +926,8 @@ class AristaDriver(driver_api.MechanismDriver):
         segment_id = None
         bound_drivers = []
         for binding_level in binding_levels:
-            bound_segment = binding_level.get(driver_api.BOUND_SEGMENT)
-            driver = binding_level.get(driver_api.BOUND_DRIVER)
+            bound_segment = binding_level.get(api.BOUND_SEGMENT)
+            driver = binding_level.get(api.BOUND_DRIVER)
             bound_drivers.append(driver)
             if (bound_segment and
                     bound_segment.get('physical_network') == physnet and

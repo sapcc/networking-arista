@@ -19,7 +19,7 @@ import os
 
 from collections import defaultdict
 from netaddr import EUI
-from neutron.context import get_admin_context
+from neutron_lib.context import get_admin_context
 from neutron.tests.unit import testlib_api
 from oslo_config import cfg
 

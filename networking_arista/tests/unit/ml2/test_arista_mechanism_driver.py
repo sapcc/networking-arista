@@ -1781,11 +1781,14 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
         context = get_admin_context()
         # Create some networks in neutron db
         n1_context = self._get_network_context('t1', 'n1', 10)
-        ndb.create_network(n1_context, {'network': n1_context.current})
+        with n1_context.session.begin():
+            ndb.create_network(n1_context, {'network': n1_context.current})
         n2_context = self._get_network_context('t2', 'n2', 20)
-        ndb.create_network(n2_context, {'network': n2_context.current})
+        with n2_context.session.begin():
+            ndb.create_network(n2_context, {'network': n2_context.current})
         n3_context = self._get_network_context('', 'ha-network', 100)
-        ndb.create_network(n3_context, {'network': n3_context.current})
+        with n3_context.session.begin():
+            ndb.create_network(n3_context, {'network': n3_context.current})
 
         # Create some networks in Arista db
         db_lib.remember_network_segment(context, 't1', 'n1', 10,
@@ -1803,7 +1806,8 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
         adb_networks = db_lib.get_networks(context, tenant_id='any')
 
         # 'n3' should now be deleted from the Arista DB
-        assert (set(('n1', 'n2', 'ha-network')) == set(adb_networks.keys()))
+        self.assertEqual(set(('n1', 'n2', 'ha-network')),
+                         set(adb_networks.keys()))
 
     def _get_network_context(self, tenant_id, net_id, seg_id, context=None):
         network = {'id': net_id,

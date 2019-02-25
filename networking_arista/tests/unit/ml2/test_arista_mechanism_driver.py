@@ -1803,7 +1803,7 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
         # Initialize the driver which should clean up the extra networks
         self.drv.initialize()
 
-        adb_networks = db_lib.get_networks(context, tenant_id='any')
+        adb_networks = db_lib.get_networks(context, project_id='any')
 
         # 'n3' should now be deleted from the Arista DB
         self.assertEqual(set(('n1', 'n2', 'ha-network')),

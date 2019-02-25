@@ -27,32 +27,32 @@ from networking_arista.common import db as db_models
 VLAN_SEGMENTATION = 'vlan'
 
 
-def remember_tenant(context, tenant_id):
+def remember_tenant(context, project_id):
     """Stores a tenant information in repository.
 
     :param context: context of the transaction
-    :param tenant_id: globally unique neutron tenant identifier
+    :param project_id: globally unique project identifier
     """
     session = context.session
     with session.begin(subtransactions=True):
         # Tenant might not be unique, but then we just have duplicates in the
         # "set".
-        tenant = (session.query(db_models.AristaProvisionedTenants).
-                  filter_by(tenant_id=tenant_id).first())
-        if not tenant:
-            tenant = db_models.AristaProvisionedTenants(tenant_id=tenant_id)
-            session.add(tenant)
+        project = (session.query(db_models.AristaProvisionedProjects).
+                   filter_by(project_id=project_id).first())
+        if not project:
+            project = db_models.AristaProvisionedProjects(project_id=project_id)
+            session.add(project)
 
 
-def forget_tenant(context, tenant_id):
+def forget_tenant(context, project_id):
     """Removes a tenant information from repository.
 
     :param context: context of the transaction
-    :param tenant_id: globally unique neutron tenant identifier
+    :param project_id: globally unique neutron tenant identifier
     """
     session = context.session
-    return session.query(db_models.AristaProvisionedTenants). \
-        filter_by(tenant_id=tenant_id). \
+    return session.query(db_models.AristaProvisionedProjects). \
+        filter_by(project_id=project_id). \
         delete()
 
 
@@ -61,7 +61,7 @@ def get_all_tenants(context):
 
     :param context: context of the transaction
     """
-    return context.session.query(db_models.AristaProvisionedTenants)
+    return context.session.query(db_models.AristaProvisionedProjects)
 
 
 def num_provisioned_tenants(context):
@@ -72,7 +72,7 @@ def num_provisioned_tenants(context):
     return get_all_tenants(context).count()
 
 
-def remember_vm(context, vm_id, host_id, port_id, network_id, tenant_id):
+def remember_vm(context, vm_id, host_id, port_id, network_id, project_id):
     """Stores all relevant information about a VM in repository.
 
     :param context: context of the transaction
@@ -80,7 +80,7 @@ def remember_vm(context, vm_id, host_id, port_id, network_id, tenant_id):
     :param host_id: ID of the host where the VM is placed
     :param port_id: globally unique port ID that connects VM to network
     :param network_id: globally unique neutron network identifier
-    :param tenant_id: globally unique neutron tenant identifier
+    :param project_id: globally unique neutron tenant identifier
     """
     session = context.session
     with session.begin(subtransactions=True):
@@ -89,7 +89,7 @@ def remember_vm(context, vm_id, host_id, port_id, network_id, tenant_id):
             host_id=host_id,
             port_id=port_id,
             network_id=network_id,
-            tenant_id=tenant_id)
+            project_id=project_id)
         session.add(vm)
 
 
@@ -102,14 +102,14 @@ def forget_all_ports_for_network(context, net_id):
         filter_by(network_id=net_id).delete()
 
 
-def update_port(context, vm_id, host_id, port_id, network_id, tenant_id):
+def update_port(context, vm_id, host_id, port_id, network_id, project_id):
     """Updates the port details in the database.
 
     :param vm_id: globally unique identifier for VM instance
     :param host_id: ID of the new host where the VM is placed
     :param port_id: globally unique port ID that connects VM to network
     :param network_id: globally unique neutron network identifier
-    :param tenant_id: globally unique neutron tenant identifier
+    :param project_id: globally unique neutron tenant identifier
     """
     session = context.session
     port = session.query(db_models.AristaProvisionedVms).filter_by(
@@ -119,7 +119,7 @@ def update_port(context, vm_id, host_id, port_id, network_id, tenant_id):
         port.host_id = host_id
         port.vm_id = vm_id
         port.network_id = network_id
-        port.tenant_id = tenant_id
+        port.project_id = project_id
 
 
 def forget_port(context, port_id, host_id):
@@ -133,11 +133,11 @@ def forget_port(context, port_id, host_id):
         host_id=host_id).delete()
 
 
-def remember_network_segment(context, tenant_id,
+def remember_network_segment(context, project_id,
                              network_id, segmentation_id, segment_id):
     """Stores all relevant information about a Network in repository.
 
-    :param tenant_id: globally unique neutron tenant identifier
+    :param project_id: globally unique neutron tenant identifier
     :param network_id: globally unique neutron network identifier
     :param segmentation_id: segmentation id that is assigned to the network
     :param segment_id: globally unique neutron network segment identifier
@@ -145,22 +145,22 @@ def remember_network_segment(context, tenant_id,
     session = context.session
     with session.begin(subtransactions=True):
         net = db_models.AristaProvisionedNets(
-            tenant_id=tenant_id,
+            project_id=project_id,
             id=segment_id,
             network_id=network_id,
             segmentation_id=segmentation_id)
         session.add(net)
 
 
-def forget_network_segment(context, tenant_id, network_id, segment_id=None):
+def forget_network_segment(context, project_id, network_id, segment_id=None):
     """Deletes all relevant information about a Network from repository.
 
-    :param tenant_id: globally unique neutron tenant identifier
+    :param project_id: globally unique neutron tenant identifier
     :param network_id: globally unique neutron network identifier
     :param segment_id: globally unique neutron network segment identifier
     """
     filters = {
-        'tenant_id': tenant_id,
+        'project_id': project_id,
         'network_id': network_id
     }
     if segment_id:
@@ -170,15 +170,15 @@ def forget_network_segment(context, tenant_id, network_id, segment_id=None):
         filter_by(**filters).delete()
 
 
-def get_segmentation_id(context, tenant_id, network_id):
+def get_segmentation_id(context, project_id, network_id):
     """Returns Segmentation ID (VLAN) associated with a network.
 
-    :param tenant_id: globally unique neutron tenant identifier
+    :param project_id: globally unique neutron tenant identifier
     :param network_id: globally unique neutron network identifier
     """
     session = context.session
     return session.query(db_models.AristaProvisionedNets.segmentation_id). \
-        filter_by(tenant_id=tenant_id,
+        filter_by(project_id=project_id,
                   network_id=network_id).first()
 
 
@@ -225,16 +225,16 @@ def is_port_provisioned(context, port_id, host_id=None):
 
 
 def is_network_provisioned(context,
-                           tenant_id, network_id, segmentation_id=None,
+                           project_id, network_id, segmentation_id=None,
                            segment_id=None):
     """Checks if a networks is already known to EOS
 
     :returns: True, if yes; False otherwise.
-    :param tenant_id: globally unique neutron tenant identifier
+    :param project_id: globally unique neutron tenant identifier
     :param network_id: globally unique neutron network identifier
     :param segment_id: globally unique neutron network segment identifier
     """
-    filters = {'tenant_id': tenant_id,
+    filters = {'project_id': project_id,
                'network_id': network_id}
     if segmentation_id:
         filters['segmentation_id'] = segmentation_id
@@ -248,49 +248,49 @@ def is_network_provisioned(context,
         filter_by(**filters).exists()).scalar()
 
 
-def is_tenant_provisioned(context, tenant_id):
+def is_tenant_provisioned(context, project_id):
     """Checks if a tenant is already known to EOS
 
     :returns: True, if yes; False otherwise.
-    :param tenant_id: globally unique neutron tenant identifier
+    :param project_id: globally unique neutron tenant identifier
     """
     query = context.session.query
 
     return query(literal(True)).filter(
-        query(db_models.AristaProvisionedTenants).
-        filter_by(tenant_id=tenant_id).exists()).scalar()
+        query(db_models.AristaProvisionedProjects).
+        filter_by(project_id=project_id).exists()).scalar()
 
 
-def num_nets_provisioned(context, tenant_id):
+def num_nets_provisioned(context, project_id):
     """Returns number of networks for a given tennat.
 
-    :param tenant_id: globally unique neutron tenant identifier
+    :param project_id: globally unique neutron tenant identifier
     """
     return context.session.query(db_models.AristaProvisionedNets). \
-        filter_by(tenant_id=tenant_id).count()
+        filter_by(project_id=project_id).count()
 
 
-def num_vms_provisioned(context, tenant_id):
+def num_vms_provisioned(context, project_id):
     """Returns number of VMs for a given tennat.
 
-    :param tenant_id: globally unique neutron tenant identifier
+    :param project_id: globally unique neutron tenant identifier
     """
     return context.session.query(db_models.AristaProvisionedVms). \
-        filter_by(tenant_id=tenant_id).count()
+        filter_by(project_id=project_id).count()
 
 
-def get_networks(context, tenant_id):
+def get_networks(context, project_id):
     """Returns all networks for a given tenant in EOS-compatible format.
 
     See AristaRPCWrapper.get_network_list() for return value format.
-    :param tenant_id: globally unique neutron tenant identifier
+    :param project_id: globally unique neutron tenant identifier
     """
     session = context.session
 
     model = db_models.AristaProvisionedNets
-    if tenant_id != 'any':
+    if project_id != 'any':
         all_nets = (session.query(model).
-                    filter(model.tenant_id == tenant_id,
+                    filter(model.project_id == project_id,
                            model.segmentation_id.isnot(None)))
     else:
         all_nets = (session.query(model).
@@ -304,15 +304,15 @@ def get_networks(context, tenant_id):
     return res
 
 
-def get_vms(context, tenant_id):
+def get_vms(context, project_id):
     """Returns all VMs for a given tenant in EOS-compatible format.
 
-    :param tenant_id: globally unique neutron tenant identifier
+    :param project_id: globally unique neutron tenant identifier
     """
     session = context.session
     model = db_models.AristaProvisionedVms
     all_ports = (session.query(model).
-                 filter(model.tenant_id == tenant_id,
+                 filter(model.project_id == project_id,
                         model.host_id.isnot(None),
                         model.vm_id.isnot(None),
                         model.network_id.isnot(None),
@@ -351,23 +351,23 @@ def are_ports_attached_to_network(context, net_id):
         query(model).filter(model.network_id == net_id).exists()).scalar()
 
 
-def get_ports(context, tenant_id=None):
+def get_ports(context, project_id=None):
     """Returns all ports of VMs in EOS-compatible format.
 
-    :param tenant_id: globally unique neutron tenant identifier
+    :param project_id: globally unique neutron tenant identifier
     """
     session = context.session
     model = db_models.AristaProvisionedVms
-    if tenant_id:
+    if project_id:
         all_ports = (session.query(model).
-                     filter(model.tenant_id == tenant_id,
+                     filter(model.project_id == project_id,
                             model.host_id.isnot(None),
                             model.vm_id.isnot(None),
                             model.network_id.isnot(None),
                             model.port_id.isnot(None)))
     else:
         all_ports = (session.query(model).
-                     filter(model.tenant_id.isnot(None),
+                     filter(model.project_id.isnot(None),
                             model.host_id.isnot(None),
                             model.vm_id.isnot(None),
                             model.network_id.isnot(None),
@@ -384,10 +384,10 @@ def get_ports(context, tenant_id=None):
 def get_tenants(context):
     """Returns list of all tenants in EOS-compatible format."""
     session = context.session
-    model = db_models.AristaProvisionedTenants
+    model = db_models.AristaProvisionedProjects
     all_tenants = session.query(model)
     res = dict(
-        (tenant.tenant_id, tenant.eos_tenant_representation())
+        (tenant.project_id, tenant.eos_tenant_representation())
         for tenant in all_tenants
     )
     return res
@@ -452,8 +452,8 @@ class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,
     def __init__(self):
         pass
 
-    def get_all_networks_for_tenant(self, context, tenant_id):
-        filters = {'tenant_id': [tenant_id]}
+    def get_all_networks_for_tenant(self, context, project_id):
+        filters = {'project_id': [project_id]}
         return super(NeutronNets,
                      self).get_networks(context, filters=filters) or []
 
@@ -465,8 +465,8 @@ class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,
         return super(NeutronNets, self).get_ports(context,
                                                   filters=filters) or []
 
-    def get_all_ports_for_tenant(self, context, tenant_id):
-        filters = {'tenant_id': [tenant_id]}
+    def get_all_ports_for_tenant(self, context, project_id):
+        filters = {'project_id': [project_id]}
         return super(NeutronNets,
                      self).get_ports(context, filters=filters) or []
 
@@ -479,7 +479,7 @@ class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,
             return
         if (nets[0]['shared'] and
                 segments[0][api.NETWORK_TYPE] == p_const.TYPE_VLAN):
-            return nets[0]['tenant_id']
+            return nets[0]['project_id']
 
     def get_network_segments(self, context, network_id, dynamic=False):
         segments = segments_db.get_network_segments(context, network_id,

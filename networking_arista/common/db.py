@@ -16,7 +16,6 @@
 import sqlalchemy as sa
 
 from neutron_lib.db import model_base
-from neutron.db import models_v2
 
 UUID_LEN = 36
 STR_LEN = 255
@@ -39,7 +38,7 @@ class AristaProvisionedNets(model_base.BASEV2, model_base.HasId,
         return {u'networkId': self.network_id,
                 u'segmentationTypeId': self.segmentation_id,
                 u'segmentationType': segmentation_type,
-                u'tenantId': self.tenant_id,
+                u'tenantId': self.project_id,
                 u'segmentId': self.id,
                 }
 
@@ -65,13 +64,13 @@ class AristaProvisionedVms(model_base.BASEV2, model_base.HasId,
                 u'networkId': self.network_id}
 
 
-class AristaProvisionedTenants(model_base.BASEV2, model_base.HasId,
+class AristaProvisionedProjects(model_base.BASEV2, model_base.HasId,
                                model_base.HasProject):
-    """Stores Tenants provisioned on Arista EOS.
+    """Stores Projects provisioned on Arista EOS.
 
-    Tenants list is maintained for sync between Neutron and EOS.
+    Project list is maintained for sync between Neutron and EOS.
     """
-    __tablename__ = 'arista_provisioned_tenants'
+    __tablename__ = 'arista_provisioned_projects'
 
     def eos_tenant_representation(self):
-        return {u'tenantId': self.tenant_id}
+        return {u'tenantId': self.project_id}

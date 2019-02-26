@@ -14,7 +14,7 @@
 # limitations under the License.
 
 from neutron.db import db_base_plugin_v2
-from neutron.db.securitygroups_rpc_base import SecurityGroupServerRpcMixin
+from neutron.db import securitygroups_db as sec_db
 from neutron.plugins.common import constants as p_const
 from neutron.db import segments_db
 from neutron_lib.plugins.ml2 import api
@@ -439,7 +439,7 @@ def get_network_segments_by_port_id(context, port_id):
 
 
 class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,
-                  SecurityGroupServerRpcMixin):
+                  sec_db.SecurityGroupDbMixin):
     """Access to Neutron DB.
 
     Provides access to the Neutron Data bases for all provisioned

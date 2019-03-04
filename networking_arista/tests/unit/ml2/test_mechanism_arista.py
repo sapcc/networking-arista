@@ -14,10 +14,10 @@
 # limitations under the License.
 
 import mock
-from neutron_lib import constants as n_const
-from neutron_lib.api.definitions import portbindings
-from neutron_lib.plugins.ml2 import api
 from neutron.tests.unit import testlib_api
+from neutron_lib.api.definitions import portbindings
+from neutron_lib import constants as n_const
+from neutron_lib.plugins.ml2 import api
 from oslo_config import cfg
 
 from networking_arista.ml2 import mechanism_arista

@@ -13,14 +13,14 @@
 #    under the License.
 
 
+from collections import defaultdict
 import json
 import mock
 import os
 
-from collections import defaultdict
 from netaddr import EUI
-from neutron_lib.context import get_admin_context
 from neutron.tests.unit import testlib_api
+from neutron_lib.context import get_admin_context
 from oslo_config import cfg
 
 from networking_arista.common.exceptions import AristaSecurityGroupError

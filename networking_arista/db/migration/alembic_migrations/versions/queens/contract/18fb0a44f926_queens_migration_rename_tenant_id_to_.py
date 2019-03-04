@@ -39,7 +39,8 @@ def upgrade():
         op.drop_index(idx_name, table_name)
 
     # rename table arista_provisioned_tenants -> arista_provisioned_projects
-    op.rename_table('arista_provisioned_tenants', 'arista_provisioned_projects')
+    op.rename_table('arista_provisioned_tenants',
+                    'arista_provisioned_projects')
 
     # rename column tenant_id -> project_id
     tables = ['arista_provisioned_nets',

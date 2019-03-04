@@ -20,14 +20,14 @@ if not os.environ.get('DISABLE_EVENTLET_PATCHING'):
     eventlet.monkey_patch()
 
 from neutron.common import config as common_config
-from neutron_lib import constants as n_const
 
-from neutron_lib.context import get_admin_context
 from neutron.db import models_v2
 from neutron.db import securitygroups_db as sg_db
-from neutron_lib.api.definitions import portbindings
-from neutron_lib import constants as p_const
 from neutron.plugins.ml2.common import exceptions as ml2_exc
+from neutron_lib.api.definitions import portbindings
+from neutron_lib import constants as n_const
+from neutron_lib import constants as p_const
+from neutron_lib.context import get_admin_context
 from neutron_lib.plugins.ml2 import api
 from oslo_config import cfg
 from oslo_log import log as logging
@@ -1026,8 +1026,8 @@ class AristaDriver(api.MechanismDriver):
         pass
 
     def update_security_group(self, context, sg):
-        if (cfg.CONF.ml2_arista.sec_group_background_only
-                or not self._is_security_group_used(context, sg['id'])):
+        if (cfg.CONF.ml2_arista.sec_group_background_only or
+                not self._is_security_group_used(context, sg['id'])):
             return
 
         try:
@@ -1038,9 +1038,9 @@ class AristaDriver(api.MechanismDriver):
             raise arista_exc.AristaSecurityGroupError(msg=msg)
 
     def create_security_group_rule(self, context, sgr):
-        if (cfg.CONF.ml2_arista.sec_group_background_only
-                or not self._is_security_group_used(context,
-                                                    sgr['security_group_id'])):
+        if (cfg.CONF.ml2_arista.sec_group_background_only or
+                not self._is_security_group_used(context,
+                                                 sgr['security_group_id'])):
             return
 
         try:

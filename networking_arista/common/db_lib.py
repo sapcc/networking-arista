@@ -14,12 +14,12 @@
 # limitations under the License.
 
 from neutron.db import db_base_plugin_v2
-from neutron.db import securitygroups_db as sec_db
-from neutron.plugins.common import constants as p_const
-from neutron.db import segments_db
-from neutron_lib.plugins.ml2 import api
-from neutron.plugins.ml2 import models as ml2_models
 from neutron.db.models import segment as segments_model
+from neutron.db import securitygroups_db as sec_db
+from neutron.db import segments_db
+from neutron.plugins.common import constants as p_const
+from neutron.plugins.ml2 import models as ml2_models
+from neutron_lib.plugins.ml2 import api
 from sqlalchemy import literal
 
 from networking_arista.common import db as db_models
@@ -40,7 +40,8 @@ def remember_tenant(context, project_id):
         project = (session.query(db_models.AristaProvisionedProjects).
                    filter_by(project_id=project_id).first())
         if not project:
-            project = db_models.AristaProvisionedProjects(project_id=project_id)
+            project = db_models.AristaProvisionedProjects(
+                                            project_id=project_id)
             session.add(project)
 
 

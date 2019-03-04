@@ -21,12 +21,12 @@ import mock
 import neutron.db.api as db
 
 from mock import patch
-from neutron_lib import constants as n_const
-from neutron_lib.context import get_admin_context
-from neutron_lib.api.definitions import portbindings
-from neutron_lib.plugins.ml2 import api
 from neutron.tests import base
 from neutron.tests.unit import testlib_api
+from neutron_lib.api.definitions import portbindings
+from neutron_lib import constants as n_const
+from neutron_lib.context import get_admin_context
+from neutron_lib.plugins.ml2 import api
 from oslo_config import cfg
 
 from networking_arista.common import db_lib

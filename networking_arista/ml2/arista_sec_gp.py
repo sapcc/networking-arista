@@ -258,31 +258,34 @@ class AristaSwitchRPCMixin(object):
         except Exception:
             pass
 
+    def _refresh_interface_membership(self, server):
+        """Update portchannel interface membership from switch"""
+        membership = {}
+
+        ret = server(["show port-channel summary"])
+        if ret and ret[0]:
+            switch_pcs = ret[0]['portChannels']
+            for pc in switch_pcs:
+                for iface in switch_pcs[0]:
+                    membership[iface] = pc
+
+        if membership:
+            self._INTERFACE_MEMBERSHIP[server] = membership
+
     def _get_interface_membership(self, server, ports):
+        """Get portchannel membership information for a list of ports"""
         ifm = self._INTERFACE_MEMBERSHIP[server]
-        missing = []
-        result = dict()
+
+        if any(port not in ifm for port in ports):
+            self._refresh_interface_membership(server)
+            ifm = self._INTERFACE_MEMBERSHIP[server]  # regrab updated mapping
+
+        membership = {}
         for port in ports:
             if port in ifm:
-                result[port] = ifm[port]
-            else:
-                missing.append(port)
+                membership[port] = ifm[port]
 
-        if not missing:
-            return result
-
-        ret = server(["show interfaces " + ",".join(missing)])
-        if ret and ret[0]:
-            for port, v in six.iteritems(ret[0]['interfaces']):
-                if not v:
-                    continue
-                pc = None
-                membership = v.get('interfaceMembership')
-                if membership:
-                    pc = membership.rsplit(' ')[-1]
-                ifm[port] = pc
-                result[port] = pc
-        return result
+        return membership
 
     def _send_eapi_req(self, switch_ip, switch_user, switch_pass, cmds):
         # This method handles all EAPI requests (using the requests library)

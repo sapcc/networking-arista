@@ -266,7 +266,7 @@ class AristaSwitchRPCMixin(object):
         if ret and ret[0]:
             switch_pcs = ret[0]['portChannels']
             for pc in switch_pcs:
-                for iface in switch_pcs[0]:
+                for iface in switch_pcs[pc]['ports']:
                     membership[iface] = pc
 
         if membership:

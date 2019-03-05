@@ -57,6 +57,27 @@ def fake_send_eapi_req(switch_ip, switch_user, switch_pass, cmds):
                  'configuredEgressIntfs': [],
                  'configuredIngressIntfs': []}
             ]})
+        elif 'show port-channel summary':
+            data = {
+                     "numberOfChannelsInUse": 2,
+                     "portChannels": {
+                          "Port-Channel104": {
+                               "ports": {
+                                   "Ethernet19/4": {},
+                                   "Ethernet19/3": {},
+                                   "PeerEthernet19/4": {},
+                                   "PeerEthernet19/3": {}
+                               }
+                          },
+                          "Port-Channel100": {
+                              "ports": {
+                                  "Ethernet17/1": {},
+                                  "Ethernet61/1": {}
+                              }
+                          }
+                     }
+                 }
+            ret.append(data)
         else:
             ret.append(None)
     return ret
@@ -795,3 +816,39 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         for rule, expected_result in rules:
             result = self.drv._clear_hostbits_from_acl(rule)
             self.assertEqual(expected_result, result)
+
+    def test_refresh_interface_membership(self):
+        expected = {
+            'Ethernet19/4': 'Port-Channel104',
+            'Ethernet19/3': 'Port-Channel104',
+            'PeerEthernet19/4': 'Port-Channel104',
+            'PeerEthernet19/3': 'Port-Channel104',
+            'Ethernet17/1': 'Port-Channel100',
+            'Ethernet61/1': 'Port-Channel100',
+        }
+
+        server = self.drv._get_server_by_ip('switch1')
+        self.drv._refresh_interface_membership(server)
+
+        self.assertEqual(expected, self.drv._INTERFACE_MEMBERSHIP[server])
+
+    def test_get_interface_membership(self):
+        expected = {
+            'Ethernet19/4': 'Port-Channel104',
+            'Ethernet17/1': 'Port-Channel100',
+        }
+
+        server = self.drv._get_server_by_ip('switch1')
+        pc = self.drv._get_interface_membership(server, ['Ethernet19/1',
+                                                         'Ethernet19/4',
+                                                         'Ethernet17/1'])
+
+        self.assertEqual(expected, pc)
+
+    def test_interface_membership_caching(self):
+        server = self.drv._get_server_by_ip('switch1')
+        self.drv._get_interface_membership(server, ['Ethernet19/4'])
+        d = self.drv._INTERFACE_MEMBERSHIP[server]
+        self.drv._get_interface_membership(server, ['Ethernet19/4'])
+
+        self.assertEqual(id(d), id(self.drv._INTERFACE_MEMBERSHIP[server]))

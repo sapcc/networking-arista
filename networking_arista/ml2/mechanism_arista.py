@@ -509,7 +509,7 @@ class AristaDriver(api.MechanismDriver):
                     # remove it from EOS
                     plugin_context = context._plugin_context
                     segment = self.ndb.get_segment_by_id(
-                        plugin_context.session,
+                        plugin_context,
                         binding_level.segment_id)
                     if not segment:
                         try:
@@ -878,7 +878,7 @@ class AristaDriver(api.MechanismDriver):
             if self._network_provisioned(context, tenant_id, network_id,
                                          segment_id=binding_level.segment_id):
                 segment = self.ndb.get_segment_by_id(
-                    plugin_context.session, binding_level.segment_id)
+                    plugin_context, binding_level.segment_id)
                 if not segment:
                     # The segment is already released. Delete it from EOS
                     LOG.debug("Deleting segment %s", binding_level.segment_id)

@@ -496,8 +496,8 @@ class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,
                                               dynamic=True)
         return segments
 
-    def get_segment_by_id(self, session, segment_id):
-        return segments_db.get_segment_by_id(session,
+    def get_segment_by_id(self, context, segment_id):
+        return segments_db.get_segment_by_id(context,
                                              segment_id)
 
     def get_network_from_net_id(self, context, network_id):

@@ -66,7 +66,7 @@ class AristaRPCWrapperNoCvx(AristaRPCWrapperBase,
                 continue
 
             port_id = binding['port_id']
-            vlan_id = segments[-1]['segmentation_id']
+            vlan_id = segments[-1].segmentation_id
 
             interfaces = [port_id]
 

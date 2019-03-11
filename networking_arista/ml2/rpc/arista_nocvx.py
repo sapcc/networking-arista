@@ -17,6 +17,7 @@ from oslo_log import log as logging
 import six
 
 from networking_arista._i18n import _, _LI
+from networking_arista.common.util import get_attr_or_item
 from networking_arista.ml2 import arista_sec_gp
 from networking_arista.ml2.rpc.base import AristaRPCWrapperBase
 
@@ -66,7 +67,7 @@ class AristaRPCWrapperNoCvx(AristaRPCWrapperBase,
                 continue
 
             port_id = binding['port_id']
-            vlan_id = segments[-1].segmentation_id
+            vlan_id = get_attr_or_item(segments[-1], 'segmentation_id')
 
             interfaces = [port_id]
 
@@ -125,7 +126,7 @@ class AristaRPCWrapperNoCvx(AristaRPCWrapperBase,
                 continue
 
             port_id = binding['port_id']
-            vlan_id = segments[-1].segmentation_id
+            vlan_id = get_attr_or_item(segments[-1], 'segmentation_id')
 
             interfaces = [port_id]
             for pc in six.itervalues(

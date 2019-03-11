@@ -301,3 +301,10 @@ def optimize_security_group_rules(rules):
             output.append(r)
 
     return output
+
+
+def get_attr_or_item(obj, key):
+    if hasattr(obj, key):
+        return getattr(obj, key)
+    else:
+        return obj[key]

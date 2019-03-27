@@ -325,8 +325,9 @@ class AristaSwitchRPCMixin(object):
                 json=data)
             try:
                 return response.json()['result']
-            except KeyError:
-                msg = "Unexpected EAPI error"
+            except KeyError as e:
+                msg = ("Unexpected EAPI error - KeyError {} - result was {}"
+                       "".format(e, response.json()))
                 LOG.info(msg)
                 raise arista_exc.AristaRpcError(msg=msg)
         except requests.exceptions.ConnectTimeout:

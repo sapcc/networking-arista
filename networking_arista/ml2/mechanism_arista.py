@@ -840,6 +840,18 @@ class AristaDriver(api.MechanismDriver):
             LOG.warning(constants.UNABLE_TO_DELETE_DEVICE_MSG)
             return
 
+        # sometimes segments are snapshot objects, let's resolve that here
+        if segments:
+            plugin_context = context._plugin_context
+            for n, segment in enumerate(segments):
+                if not isinstance(segment, dict) and \
+                        not hasattr(segment, 'segmentation_id') and \
+                        hasattr(segment, 'segment_id'):
+                    segments[n] = db_lib.get_segmentation_id_by_segment_id(
+                                        plugin_context,
+                                        segment.segment_id
+                    )
+
         try:
             if not cfg.CONF.ml2_arista.skip_unplug:
                 hostname = self._host_name(host)

@@ -115,6 +115,12 @@ class AristaRPCWrapperNoCvx(AristaRPCWrapperBase,
         if not self._can_handle_port(segments, switch_bindings, vnic_type):
             return
 
+        if len(segments) == 0 or segments[-1] is None:
+            LOG.warning("No segments found on unplug event for port %s on net "
+                        "%s with bindings %s, segments were %s",
+                        neutron_port_id, network_id, switch_bindings, segments)
+            return
+
         for binding in switch_bindings:
             if not binding:
                 continue

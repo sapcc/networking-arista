@@ -183,6 +183,17 @@ def get_segmentation_id(context, project_id, network_id):
                   network_id=network_id).first()
 
 
+def get_segmentation_id_by_segment_id(context, segment_id):
+    """Returns Segmentation ID (VLAN) associated with a segment.
+
+    :param project_id: globally unique neutron tenant identifier
+    :param network_id: globally unique neutron network identifier
+    """
+    session = context.session
+    return session.query(db_models.AristaProvisionedNets.segmentation_id). \
+        filter_by(id=segment_id).first()
+
+
 def is_vm_provisioned(context, vm_id, host_id, port_id,
                       network_id, tenant_id):
     """Checks if a VM is already known to EOS

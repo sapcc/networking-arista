@@ -17,16 +17,16 @@ import threading
 
 from neutron.api.rpc.agentnotifiers import l3_rpc_agent_api
 from neutron.api.rpc.handlers import l3_rpc
-from neutron_lib import constants as n_const
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
-from neutron_lib import context as nctx
 from neutron.db import db_base_plugin_v2
 from neutron.db import extraroute_db
 from neutron.db import l3_agentschedulers_db
 from neutron.db import l3_gwmode_db
 from neutron.plugins.common import constants
 from neutron.plugins.ml2.driver_context import NetworkContext  # noqa
+from neutron_lib import constants as n_const
+from neutron_lib import context as nctx
 from oslo_config import cfg
 from oslo_log import helpers as log_helpers
 from oslo_log import log as logging

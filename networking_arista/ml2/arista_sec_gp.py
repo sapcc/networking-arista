@@ -692,7 +692,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         elif remote_group_id:
             security_group_ips = security_group_ips or {}
             if remote_group_id not in security_group_ips:
-                fetched = self._ndb._select_ips_for_remote_group(
+                fetched = db_lib.select_ips_for_remote_group(
                     context, [remote_group_id])
                 security_group_ips.update(fetched)
 

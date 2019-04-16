@@ -13,10 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from neutron.db import api as db_api
 from neutron.db import db_base_plugin_v2
+from neutron.db.models import allowed_address_pair as aap_models
 from neutron.db.models import segment as segments_model
+from neutron.db.models import securitygroup as sg_models
+from neutron.db import models_v2, segments_db
 from neutron.db import securitygroups_db as sec_db
-from neutron.db import segments_db
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2 import models as ml2_models
 from neutron_lib.plugins.ml2 import api
@@ -448,6 +451,48 @@ def get_network_segments_by_port_id(context, port_id):
                 order_by(ml2_models.PortBindingLevel.level).
                 all())
     return [segment[0] for segment in segments]
+
+
+@db_api.retry_if_session_inactive()
+def select_ips_for_remote_group(context, remote_group_ids):
+    """Find all ips for a remote group - copied from neutron
+
+    This function is originally part of the class SecurityGroupServerRpcMixin,
+    see neutron/db/securitygroups_rpc_base.py, should be replaced when
+    a better method of finding sg group membership has been implemented
+    in this driver.
+    """
+    ips_by_group = {}
+    if not remote_group_ids:
+        return ips_by_group
+    for remote_group_id in remote_group_ids:
+        ips_by_group[remote_group_id] = set()
+
+    ip_port = models_v2.IPAllocation.port_id
+    sg_binding_port = sg_models.SecurityGroupPortBinding.port_id
+    sg_binding_sgid = sg_models.SecurityGroupPortBinding.security_group_id
+
+    # Join the security group binding table directly to the IP allocation
+    # table instead of via the Port table skip an unnecessary intermediary
+    query = context.session.query(sg_binding_sgid,
+                                  models_v2.IPAllocation.ip_address,
+                                  aap_models.AllowedAddressPair.ip_address)
+    query = query.join(models_v2.IPAllocation,
+                       ip_port == sg_binding_port)
+    # Outerjoin because address pairs may be null and we still want the
+    # IP for the port.
+    query = query.outerjoin(
+        aap_models.AllowedAddressPair,
+        sg_binding_port == aap_models.AllowedAddressPair.port_id)
+    query = query.filter(sg_binding_sgid.in_(remote_group_ids))
+    # Each allowed address pair IP record for a port beyond the 1st
+    # will have a duplicate regular IP in the query response since
+    # the relationship is 1-to-many. Dedup with a set
+    for security_group_id, ip_address, allowed_addr_ip in query:
+        ips_by_group[security_group_id].add(ip_address)
+        if allowed_addr_ip:
+            ips_by_group[security_group_id].add(allowed_addr_ip)
+    return ips_by_group
 
 
 class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,

@@ -113,7 +113,7 @@ class SyncService(object):
         try:
             self._rpc.perform_sync_of_sg(self._context)
         except Exception as e:
-            LOG.warning(e)
+            LOG.exception(e)
 
         # Check whether CVX is available before starting the sync.
         if not self._rpc.check_cvx_availability():

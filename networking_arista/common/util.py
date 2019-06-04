@@ -188,7 +188,7 @@ def _try_merge_rules(rule0, rule1):
         return rule0
 
     # This will merge adjacent networks (with same port ranges)
-    if same_ports:
+    if same_ports and merged_nets:
         rule0['remote_ip_prefix'] = merged_nets[0]
         return rule0
 

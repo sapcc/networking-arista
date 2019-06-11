@@ -98,6 +98,17 @@ class SyncService(object):
         self._coordinator.run_watchers()
         return self._is_leader
 
+    def save_switch_configs(self):
+        """Let each switch write its running-config to its startup-config"""
+        if not self._check_leader():
+            LOG.info("Not leader, not saving config")
+            return
+
+        try:
+            self._rpc.save_switch_configs()
+        except Exception as e:
+            LOG.exception(e)
+
     def do_synchronize(self):
         """Periodically check whether EOS is in sync with ML2 driver.
 

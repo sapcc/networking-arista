@@ -72,6 +72,10 @@ class AristaDriver(api.MechanismDriver):
         self.timer = loopingcall.FixedIntervalLoopingCall(
             self._synchronization_thread)
         self.sync_timeout = confg['sync_interval']
+        if confg.save_config_interval > 0:
+            self._config_save_loop = loopingcall.FixedIntervalLoopingCall(
+                    self._save_switch_configs_thread)
+        self.save_config_interval = confg.save_config_interval
         self.managed_physnets = confg['managed_physnets']
 
         self.eapi = None
@@ -105,6 +109,7 @@ class AristaDriver(api.MechanismDriver):
         self.rpc.clear_region_updated_time()
         self.sg_handler = sec_group_callback.AristaSecurityGroupHandler(self)
         self.timer.start(self.sync_timeout, stop_on_exception=False)
+        self._config_save_loop.start(self.save_config_interval, stop_on_exception=False)
 
     def create_network_precommit(self, context):
         """Remember the tenant, and network information."""
@@ -991,6 +996,9 @@ class AristaDriver(api.MechanismDriver):
     def _host_name(self, hostname):
         fqdns_used = cfg.CONF.ml2_arista['use_fqdn']
         return hostname if fqdns_used else hostname.split('.')[0]
+
+    def _save_switch_configs_thread(self):
+        self.sync_service.save_switch_configs()
 
     def _synchronization_thread(self):
         self.sync_service.do_synchronize()

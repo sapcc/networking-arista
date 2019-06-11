@@ -168,6 +168,27 @@ class AristaRPCWrapperNoCvx(AristaRPCWrapperBase,
             return False
         return True
 
+    def save_switch_configs(self):
+        self._maintain_connections()
+
+        success_count = 0
+        for switch_ip, server in self._SERVER_BY_IP.items():
+            try:
+                result = server(["copy running-config startup-config"])[0]
+                msg = "\n".join(result.get('messages', []))
+
+                if 'Copy completed successfully' in msg:
+                    success_count += 1
+                else:
+                    LOG.error("Could not save config in switch, "
+                              "switch returned unexpected result: %s",
+                              result)
+            except Exception as e:
+                LOG.error("Could not save config on switch %s: %s - %s",
+                          switch_ip, type(e), str(e))
+
+        LOG.info("Successfully saved %s switch configs", success_count)
+
     def bm_and_dvr_supported(self):
         return True
 

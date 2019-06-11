@@ -216,6 +216,9 @@ class AristaRPCWrapperEapi(AristaRPCWrapperBase):
 
         return tenants
 
+    def save_switch_configs(self):
+        raise NotImplementedError("Config saving not implemented")
+
     def bm_and_dvr_supported(self):
         return (self.cli_commands[CMD_INSTANCE] == 'instance')
 

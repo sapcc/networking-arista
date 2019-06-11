@@ -269,6 +269,10 @@ class AristaRPCWrapperBase(object):
         self.security_group_driver.perform_sync_of_sg(context)
 
     @abc.abstractmethod
+    def save_switch_configs(self):
+        """Safe switch config of all connected switches"""
+
+    @abc.abstractmethod
     def bm_and_dvr_supported(self):
         """Whether EOS supports Ironic and DVR.
 

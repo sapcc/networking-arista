@@ -148,6 +148,9 @@ class AristaRPCWrapperJSON(AristaRPCWrapperBase):
         # that are available once using this API.
         pass
 
+    def save_switch_configs(self):
+        raise NotImplementedError("Config saving not implemented")
+
     def bm_and_dvr_supported(self):
         return True
 

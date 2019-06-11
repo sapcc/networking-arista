@@ -145,6 +145,10 @@ ARISTA_DRIVER_OPTS = [
                       'that tries to merge ACL Rules into shared subnets in '
                       'order to minimize total rule count even it it punches '
                       'holes into the original ruleset. 0 to disable.')),
+    cfg.IntOpt('save_config_interval',
+               default=900,
+               help=_('Interval in which the driver writes the running-config '
+                      'to startup-config in seconds. Set to 0 to disable.')),
 
 ]
 

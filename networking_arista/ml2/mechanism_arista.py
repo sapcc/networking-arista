@@ -557,15 +557,15 @@ class AristaDriver(api.MechanismDriver):
         if new_port['device_owner'] == 'compute:probe':
             return
 
-        # Check if it is port migration case
-        if self._handle_port_migration_precommit(context):
-            return
-
         # Check if the port is part of managed physical network
         seg_info = self._bound_segments(context)
         if not seg_info:
             # Ignoring the update as the port is not managed by
             # arista mechanism driver.
+            return
+
+        # Check if it is port migration case
+        if self._handle_port_migration_precommit(context):
             return
 
         # device_id and device_owner are set on VM boot
@@ -674,15 +674,15 @@ class AristaDriver(api.MechanismDriver):
         pretty_log("update_port_postcommit: new", port)
         pretty_log("update_port_postcommit: orig", orig_port)
 
-        # Check if it is port migration case
-        if self._handle_port_migration_postcommit(context):
-            # Return from here as port migration is already handled.
-            return
-
         seg_info = self._bound_segments(context)
         if not seg_info:
             LOG.debug("Ignoring the update as the port %s is not managed by "
                       "Arista switches.", port_id)
+            return
+
+        # Check if it is port migration case
+        if self._handle_port_migration_postcommit(context):
+            # Return from here as port migration is already handled.
             return
 
         hostname = self._host_name(host)

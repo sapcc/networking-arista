@@ -207,6 +207,11 @@ class AristaSwitchRPCMixin(object):
         self._conn_timeout = cfg.CONF.ml2_arista.conn_timeout
         self._verify = cfg.CONF.ml2_arista.verify_ssl
         self._session = kwargs.get('session') or util.make_http_session()
+        self._sg_disabled_device_ids = []
+
+        for dev_id in cfg.CONF.ml2_arista.\
+                disable_sec_group_support_on_device_ids:
+            self._sg_disabled_device_ids.append(EUI(dev_id))
 
         if self._requests_send_metrics_hook not in \
                 self._session.hooks['response']:
@@ -1370,7 +1375,8 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             server = self._get_server(*switch)
             if server is None:
                 return
-            self._sync_acls(server, port_security_groups, known_acls[server])
+            self._sync_acls(server, port_security_groups, known_acls[server],
+                            switch_id=switch[1])
 
         for _sync_acl in pool.starmap(
                 sync_acl, six.iteritems(ports_by_switch)):
@@ -1388,7 +1394,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                 LOG.exception(msg)
                 raise arista_exc.AristaSecurityGroupError(msg=msg)
 
-    def _sync_acls(self, server, port_security_groups, known_acls):
+    def _sync_acls(self, server, port_security_groups, known_acls, switch_id):
         # Fetches the summary, which is the basis of all the current work
         port_to_acl = collections.defaultdict(lambda: [None, None])
         summary = server(['show ip access-lists summary'])[0]
@@ -1415,7 +1421,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
         for port_id, sgs in six.iteritems(port_security_groups):
             acl_on_port = port_to_acl[port_id]
-            if sgs:
+            if sgs and switch_id not in self._sg_disabled_device_ids:
                 if all(acl_on_port[i] == self._arista_acl_name(sgs, dir)
                        for i, dir in enumerate(DIRECTIONS)):
                     continue

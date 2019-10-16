@@ -149,7 +149,12 @@ ARISTA_DRIVER_OPTS = [
                default=900,
                help=_('Interval in which the driver writes the running-config '
                       'to startup-config in seconds. Set to 0 to disable.')),
-
+    cfg.ListOpt('disable_sec_group_support_on_device_ids',
+                default=[],
+                help=_('Disable security support for a set of arista devices. '
+                       'For each device in this list all ip access-group '
+                       'statements will be removed from the '
+                       'interface config')),
 ]
 
 """ Arista L3 Service Plugin specific configuration knobs.

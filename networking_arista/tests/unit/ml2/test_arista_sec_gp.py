@@ -672,57 +672,58 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                 (
                     "permit icmp any any",
                     {'host': 'any', 'port_max': None, 'proto': 'icmp',
-                    'port_min': None}
+                     'port_min': None}
                 ),
                 (
                     "permit icmp 10.123.32.0/20 any",
                     {'host': '10.123.32.0/20', 'port_max': None,
-                    'proto': 'icmp', 'port_min': None}
+                     'proto': 'icmp', 'port_min': None}
                 ),
                 (
                     "permit tcp any any range tcpmux 65535 syn",
                     {'host': 'any', 'proto': 'tcp', 'src_range': None,
-                    'port_min': 'tcpmux', 'port_max': '65535', 'flags': ' syn'}
+                     'port_min': 'tcpmux', 'port_max': '65535',
+                     'flags': ' syn'}
                 ),
                 (
-                     "permit tcp 10.123.40.0/22 any range 0 65535 syn",
-                     {'host': '10.123.40.0/22', 'proto': 'tcp',
+                    "permit tcp 10.123.40.0/22 any range 0 65535 syn",
+                    {'host': '10.123.40.0/22', 'proto': 'tcp',
                      'src_range': None, 'port_min': '0', 'port_max': '65535',
                      'flags': ' syn'}
                 ),
                 (
-                     "permit udp 10.123.40.0/22 any range 0 65535",
-                     {'host': '10.123.40.0/22', 'proto': 'udp',
+                    "permit udp 10.123.40.0/22 any range 0 65535",
+                    {'host': '10.123.40.0/22', 'proto': 'udp',
                      'src_range': None, 'port_min': '0', 'port_max': '65535',
                      'flags': None}
                 )
             ],
             'egress': [
                 (
-                     "permit icmp any any",
-                     {'host': 'any', 'port_max': None, 'proto': 'icmp',
+                    "permit icmp any any",
+                    {'host': 'any', 'port_max': None, 'proto': 'icmp',
                      'port_min': None}
                 ),
                 (
-                     "permit tcp any any range 3141 3141 syn",
-                     {'proto': 'tcp', 'src_range': None, 'host': 'any',
+                    "permit tcp any any range 3141 3141 syn",
+                    {'proto': 'tcp', 'src_range': None, 'host': 'any',
                      'dst_range': ' range 3141 3141', 'flags': ' syn'}
                 ),
                 (
-                     "permit udp any host 10.123.45.67 range 3141 3141",
-                     {'proto': 'udp', 'src_range': None,
+                    "permit udp any host 10.123.45.67 range 3141 3141",
+                    {'proto': 'udp', 'src_range': None,
                      'host': '10.123.45.67', 'dst_range': ' range 3141 3141',
                      'flags': None}
                 ),
                 (
-                     "permit udp any 10.123.45.8/30 range 3141 3141",
-                     {'proto': 'udp', 'src_range': None,
+                    "permit udp any 10.123.45.8/30 range 3141 3141",
+                    {'proto': 'udp', 'src_range': None,
                      'host': '10.123.45.8/30', 'dst_range': ' range 3141 3141',
                      'flags': None}
                 ),
                 (
-                     "permit udp any any range ftp ssh",
-                     {'proto': 'udp', 'src_range': None, 'host': 'any',
+                    "permit udp any any range ftp ssh",
+                    {'proto': 'udp', 'src_range': None, 'host': 'any',
                      'dst_range': ' range ftp ssh', 'flags': None}
                 ),
             ],
@@ -735,12 +736,12 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                 icmp = rule.startswith('permit icmp')
                 m = regexes_to_test[icmp][direction].match(rule)
                 self.assertNotEqual(
-                        None, m,
-                        "Could not parse {dir} rule '{rule}'"
-                        .format(rule=rule, dir=direction))
+                    None, m,
+                    "Could not parse {dir} rule '{rule}'"
+                    .format(rule=rule, dir=direction))
                 self.assertEqual(
-                        expected_result, m.groupdict(),
-                        "Parsing result for rule did not match")
+                    expected_result, m.groupdict(),
+                    "Parsing result for rule did not match")
 
     def test_lossy_consolidate_cmds(self):
         rules = {

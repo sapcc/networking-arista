@@ -504,12 +504,14 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
             'no 120',
             'no 130',
             'no 140',  # This one is a duplicate
+            'no 150',
             'exit',
             'ip access-list SG-OUT-test_security_group',
             'no 20',
             'no 30',
             'no 60',
             'no 70',
+            'no 80',
             'exit'],
             self.mock_sg_cmds.call_args_list[0][0][0],
             'unexpected security group rules')
@@ -518,6 +520,35 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
               'tenant_id': '123456789',
               'security_group_rules': [
                   self._get_sg_rule(None, '100.100.0.0/16', None, None)]
+              }
+        self.fake_rpc.get_security_groups.return_value = {
+            'test_security_group': sg}
+        self.mock_sg_cmds.reset_mock()
+        self.drv.perform_sync_of_sg(context)
+        self.assertListEqual([
+            'ip access-list SG-IN-test_security_group',
+            'no 30',
+            'no 100',
+            'no 130',
+            'no 140',  # This one is a duplicate
+            'no 150',
+            'exit',
+            'ip access-list SG-OUT-test_security_group',
+            'no 20',
+            'no 30',
+            'no 70',
+            'no 80',
+            'exit'],
+            self.mock_sg_cmds.call_args_list[0][0][0],
+            'unexpected security group rules')
+
+        sg = {'id': 'test_security_group',
+              'tenant_id': '123456789',
+              'security_group_rules': [
+                  self._get_sg_rule(None, '100.100.0.0/16', None, None),
+                  self._get_sg_rule("tcp", '10.10.0.0/16', 2342, 4223),
+                  self._get_sg_rule("tcp", '10.23.0.0/16', 1337, 31337,
+                                    direction="egress")]
               }
         self.fake_rpc.get_security_groups.return_value = {
             'test_security_group': sg}
@@ -561,12 +592,14 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
             'no 120',
             'no 130',
             'no 140',  # This one is a duplicate
+            'no 150',
             'exit',
             'ip access-list SG-OUT-test_security_group',
             'no 20',
             'no 30',
             'no 60',
             'no 70',
+            'no 80',
             'exit'],
             self.mock_sg_cmds.call_args_list[0][0][0],
             'unexpected security group rules on Switch 1')
@@ -696,7 +729,26 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                     {'host': '10.123.40.0/22', 'proto': 'udp',
                      'src_range': None, 'port_min': '0', 'port_max': '65535',
                      'flags': None}
-                )
+                ),
+                (
+                    "permit tcp any any syn",
+                    {'host': 'any', 'proto': 'tcp', 'src_range': None,
+                     'port_min': None, 'port_max': None,
+                     'flags': ' syn'}
+                ),
+                (
+                    "permit tcp 10.10.10.0/24 any syn",
+                    {'host': '10.10.10.0/24', 'proto': 'tcp',
+                     'src_range': None,
+                     'port_min': None, 'port_max': None,
+                     'flags': ' syn'}
+                ),
+                (
+                    "permit udp 10.123.40.0/22 any",
+                    {'host': '10.123.40.0/22', 'proto': 'udp',
+                     'src_range': None, 'port_min': None, 'port_max': None,
+                     'flags': None}
+                ),
             ],
             'egress': [
                 (
@@ -722,9 +774,26 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                      'flags': None}
                 ),
                 (
+                    "permit udp any 10.123.45.8/30 range 3141 3141",
+                    {'proto': 'udp', 'src_range': None,
+                     'host': '10.123.45.8/30', 'dst_range': ' range 3141 3141',
+                     'flags': None}
+                ),
+                (
                     "permit udp any any range ftp ssh",
                     {'proto': 'udp', 'src_range': None, 'host': 'any',
                      'dst_range': ' range ftp ssh', 'flags': None}
+                ),
+                (
+                    "permit udp any 10.123.45.8/30",
+                    {'proto': 'udp', 'src_range': None,
+                     'host': '10.123.45.8/30', 'dst_range': None,
+                     'flags': None}
+                ),
+                (
+                    "permit tcp any any syn",
+                    {'proto': 'tcp', 'src_range': None, 'host': 'any',
+                     'dst_range': None, 'flags': ' syn'}
                 ),
             ],
         }

@@ -99,7 +99,7 @@
         {
           "log": false,
           "sequenceNumber": 30,
-          "text": "permit udp any range 0 65535 any range 32768 65535",
+          "text": "permit udp any any",
           "counterData": {
             "lastChangedTime": 8273888.996837657,
             "checkpointPacketCount": 0,
@@ -108,12 +108,9 @@
           "ruleFilter": {
             "protocol": 17,
             "srcPort": {
-              "oper": "range",
+              "oper": "any",
               "maxPorts": 10,
-              "ports": [
-                0,
-                65535
-              ]
+              "ports": []
             },
             "ipLen": {
               "oper": "any",
@@ -130,12 +127,9 @@
             },
             "established": false,
             "dstPort": {
-              "oper": "range",
+              "oper": "any",
               "maxPorts": 10,
-              "ports": [
-                32768,
-                65535
-              ]
+              "ports": []
             },
             "tracked": false,
             "destination": {
@@ -291,7 +285,7 @@
         {
           "log": false,
           "sequenceNumber": 90,
-          "text": "permit tcp 100.100.0.0/16 any range 0 65535 syn",
+          "text": "permit tcp 100.100.0.0/16 any syn",
           "counterData": {},
           "ruleFilter": {
             "protocol": 6,
@@ -315,12 +309,9 @@
             },
             "established": false,
             "dstPort": {
-              "oper": "range",
+              "oper": "any",
               "maxPorts": 10,
-              "ports": [
-                0,
-                65535
-              ]
+              "ports": []
             },
             "tracked": false,
             "destination": {
@@ -555,7 +546,7 @@
         {
           "log": false,
           "sequenceNumber": 120,
-          "text": "permit udp 100.100.0.0/16 any range 0 65535",
+          "text": "permit udp 100.100.0.0/16 any",
           "counterData": {},
           "ruleFilter": {
             "protocol": 17,
@@ -579,12 +570,9 @@
             },
             "established": false,
             "dstPort": {
-              "oper": "range",
+              "oper": "any",
               "maxPorts": 10,
-              "ports": [
-                0,
-                65535
-              ]
+              "ports": []
             },
             "tracked": false,
             "destination": {
@@ -645,7 +633,7 @@
         {
           "log": false,
           "sequenceNumber": 130,
-          "text": "permit tcp any any range tcpmux 65535 syn",
+          "text": "permit tcp any any syn",
           "counterData": {},
           "ruleFilter": {
             "protocol": 6,
@@ -669,12 +657,9 @@
             },
             "established": false,
             "dstPort": {
-              "oper": "range",
+              "oper": "any",
               "maxPorts": 10,
-              "ports": [
-                1,
-                65535
-              ]
+              "ports": []
             },
             "tracked": false,
             "destination": {
@@ -825,6 +810,96 @@
             "payload": [],
             "headerStart": false
           }
+        },
+        {
+          "log": false,
+          "sequenceNumber": 150,
+          "text": "permit tcp 10.10.0.0/16 any range 2342 4223 syn",
+          "counterData": {},
+          "ruleFilter": {
+            "protocol": 6,
+            "srcPort": {
+              "oper": "any",
+              "maxPorts": 10,
+              "ports": []
+            },
+            "ipLen": {
+              "oper": "any",
+              "ipLens": []
+            },
+            "userL4": {
+              "pattern": 0,
+              "patternMask": 0
+            },
+            "nexthopGroup": "",
+            "ttl": {
+              "oper": "any",
+              "value": 0
+            },
+            "established": false,
+            "dstPort": {
+              "oper": "range",
+              "maxPorts": 10,
+              "ports": [
+                2342,
+                4223
+              ]
+            },
+            "tracked": false,
+            "destination": {
+              "ip": "0.0.0.0",
+              "mask": 0
+            },
+            "gtp": {
+              "teidMask": 0,
+              "teid": 0
+            },
+            "source": {
+              "ip": "10.10.0.0",
+              "mask": 4294901760
+            },
+            "tcpFlags": 2,
+            "gre": {
+              "protoMask": 0,
+              "protocol": 0
+            },
+            "fragments": false,
+            "vxlan": {
+              "vni": 0,
+              "vxlanValid": false,
+              "vniMask": 0
+            },
+            "nvgre": {
+              "tniMask": 0,
+              "protoMask": 0,
+              "protocol": 0,
+              "tni": 0
+            },
+            "ecn": {
+              "name": "dontCare",
+              "match": false
+            },
+            "vlan": {
+              "innerId": 0,
+              "innerMask": 0,
+              "mask": 0,
+              "id": 0
+            },
+            "dscp": {
+              "value": 0,
+              "match": false
+            },
+            "standard": false,
+            "icmp": {
+              "code": 65535,
+              "type": 65535
+            }
+          },
+          "action": "permit",
+          "payload": {
+            "payload": [],
+            "headerStart": false
+          }
         }
       ],
       "countersEnabled": false,
@@ -927,7 +1002,7 @@
         {
           "log": false,
           "sequenceNumber": 20,
-          "text": "permit tcp any any range 0 65535 syn",
+          "text": "permit tcp any any syn",
           "counterData": {},
           "ruleFilter": {
             "protocol": 6,
@@ -951,12 +1026,9 @@
             },
             "established": false,
             "dstPort": {
-              "oper": "range",
+              "oper": "any",
               "maxPorts": 10,
-              "ports": [
-                0,
-                65535
-              ]
+              "ports": [ ]
             },
             "tracked": false,
             "destination": {
@@ -1017,7 +1089,7 @@
         {
           "log": false,
           "sequenceNumber": 30,
-          "text": "permit udp any any range 0 65535",
+          "text": "permit udp any any",
           "counterData": {},
           "ruleFilter": {
             "protocol": 17,
@@ -1041,12 +1113,9 @@
             },
             "established": false,
             "dstPort": {
-              "oper": "range",
+              "oper": "any",
               "maxPorts": 10,
-              "ports": [
-                0,
-                65535
-              ]
+              "ports": []
             },
             "tracked": false,
             "destination": {
@@ -1198,17 +1267,14 @@
         {
           "log": false,
           "sequenceNumber": 60,
-          "text": "permit udp any range 0 65535 100.100.0.0/16",
+          "text": "permit udp any 100.100.0.0/16",
           "counterData": {},
           "ruleFilter": {
             "protocol": 17,
             "srcPort": {
-              "oper": "range",
+              "oper": "any",
               "maxPorts": 10,
-              "ports": [
-                0,
-                65535
-              ]
+              "ports": []
             },
             "ipLen": {
               "oper": "any",
@@ -1364,6 +1430,96 @@
             "icmp": {
               "code": 0,
               "type": 0
+            }
+          },
+          "action": "permit",
+          "payload": {
+            "payload": [],
+            "headerStart": false
+          }
+        },
+        {
+          "log": false,
+          "sequenceNumber": 80,
+          "text": "permit tcp any 10.23.0.0/16 range 1337 31337 syn",
+          "counterData": {},
+          "ruleFilter": {
+            "protocol": 6,
+            "srcPort": {
+              "oper": "any",
+              "maxPorts": 10,
+              "ports": []
+            },
+            "ipLen": {
+              "oper": "any",
+              "ipLens": []
+            },
+            "userL4": {
+              "pattern": 0,
+              "patternMask": 0
+            },
+            "nexthopGroup": "",
+            "ttl": {
+              "oper": "any",
+              "value": 0
+            },
+            "established": false,
+            "dstPort": {
+              "oper": "range",
+              "maxPorts": 10,
+              "ports": [
+                1337,
+                31337
+              ]
+            },
+            "tracked": false,
+            "destination": {
+              "ip": "10.23.0.0",
+              "mask": 4294901760
+            },
+            "gtp": {
+              "teidMask": 0,
+              "teid": 0
+            },
+            "source": {
+              "ip": "0.0.0.0",
+              "mask": 0
+            },
+            "tcpFlags": 2,
+            "gre": {
+              "protoMask": 0,
+              "protocol": 0
+            },
+            "fragments": false,
+            "vxlan": {
+              "vni": 0,
+              "vxlanValid": false,
+              "vniMask": 0
+            },
+            "nvgre": {
+              "tniMask": 0,
+              "protoMask": 0,
+              "protocol": 0,
+              "tni": 0
+            },
+            "ecn": {
+              "name": "dontCare",
+              "match": false
+            },
+            "vlan": {
+              "innerId": 0,
+              "innerMask": 0,
+              "mask": 0,
+              "id": 0
+            },
+            "dscp": {
+              "value": 0,
+              "match": false
+            },
+            "standard": false,
+            "icmp": {
+              "code": 65535,
+              "type": 65535
             }
           },
           "action": "permit",

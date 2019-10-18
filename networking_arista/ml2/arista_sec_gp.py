@@ -75,10 +75,15 @@ acl_cmd = {
     'acl': {'create': ['ip access-list {0}'],
             'tcp_established': ['permit tcp any any established'],
             'in_rule': ['permit {0} {1} any range {2} {3}{4}'],
+            'in_rule_norange': ['permit {0} {1} any{4}'],
             'in_rule_reverse': ['permit {0} any range {2} {3} {1}'],
+            'in_rule_reverse_norange': ['permit {0} any {1}'],
             'out_rule': ['permit {0} any {1} range {2} {3}'],
+            'out_rule_norange': ['permit {0} any {1}'],
             'out_rule_tcp': ['permit {0} any {1} range {2} {3}{4}'],
+            'out_rule_tcp_norange': ['permit {0} any {1}{4}'],
             'out_rule_reverse': ['permit {0} {1} range {2} {3} any{4}'],
+            'out_rule_reverse_norange': ['permit {0} {1} any{4}'],
             'in_dhcp_rule': ['permit udp {1} eq {2} any eq {3}'],
             'out_dhcp_rule': ['permit udp any eq {3} {1} eq {2}'],
             'in_icmp_custom1': ['permit icmp {0} any {1}'],
@@ -104,9 +109,15 @@ acl_cmd = {
             'del_in_acl_rule': ['ip access-list {0}',
                                 'no permit {1} {2} any range {3}{4}',
                                 'exit'],
+            'del_in_acl_rule_norange': ['ip access-list {0}',
+                                        'no permit {1} {2} any',
+                                        'exit'],
             'del_out_acl_rule': ['ip access-list {0}',
                                  'no permit {1} any {2} range {3}{4}',
-                                 'exit']},
+                                 'exit'],
+            'del_out_acl_rule_norange': ['ip access-list {0}',
+                                         'no permit {1} any {2}',
+                                         'exit']},
 
     'apply': {'ingress': ['interface {0}',
                           'ip access-group {1} out',
@@ -131,8 +142,8 @@ _COMMAND_PARSE_PATTERN = {
             r"(?:host )?"
             r"(?P<host>\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,3})?|any)"
             r"(?P<src_range> range \w+ \w+)? "
-            r"any "
-            r"range (?P<port_min>\w+) (?P<port_max>\w+)(?P<flags> syn)?$"
+            r"any"
+            r"(?: range (?P<port_min>\w+) (?P<port_max>\w+))?(?P<flags> syn)?$"
         ),
         'egress': re.compile(
             r"^permit (?P<proto>udp|tcp) "
@@ -169,6 +180,8 @@ _COMMAND_FORMAT_PATTERN = {
         'ingress':
             'permit {proto} {host}{src_range} '
             'any range {port_min} {port_max}{flags}',
+        'ingress_norange':
+            'permit {proto} {host}{src_range} any{flags}',
         'egress':
             'permit {proto} any{src_range} {host}{dst_range}{flags}'
     },
@@ -537,23 +550,26 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             return in_cmds, out_cmds
         else:
             # Non ICMP rules processing here
+            rule_ext = ''
+            if from_port <= 1 and to_port == 65535:
+                rule_ext = '_norange'
             flags = ''
             if direction == 'egress':
                 if protocol == 'tcp':
                     flags = ' syn'
-                    out_rule = self.aclCreateDict['out_rule_tcp']
+                    out_rule = self.aclCreateDict['out_rule_tcp' + rule_ext]
                     in_rule = []
                 else:
                     flags = ' range 32768 65535'
-                    out_rule = self.aclCreateDict['out_rule']
-                    in_rule = self.aclCreateDict['out_rule_reverse']
+                    out_rule = self.aclCreateDict['out_rule' + rule_ext]
+                    in_rule = self.aclCreateDict['out_rule_reverse' + rule_ext]
             else:
-                in_rule = self.aclCreateDict['in_rule']
+                in_rule = self.aclCreateDict['in_rule' + rule_ext]
                 if protocol == 'tcp':
                     flags = ' syn'
                     out_rule = []
                 else:
-                    out_rule = self.aclCreateDict['in_rule_reverse']
+                    out_rule = self.aclCreateDict['in_rule_reverse' + rule_ext]
 
             for c in in_rule:
                 in_cmds.append(c.format(protocol, cidr, from_port, to_port,
@@ -618,9 +634,13 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                     cmds.append(c.format(name, cidr, from_port))
 
         else:
-            acl_dict = self.aclCreateDict['del_in_acl_rule']
+            rule_ext = ''
+            if from_port <= 1 and to_port == 65535:
+                rule_ext = '_norange'
+
+            acl_dict = self.aclCreateDict['del_in_acl_rule' + rule_ext]
             if direction == 'egress':
-                acl_dict = self.aclCreateDict['del_out_acl_rule']
+                acl_dict = self.aclCreateDict['del_out_acl_rule' + rule_ext]
 
             for c in acl_dict:
                 cmds.append(c.format(name, protocol, cidr,
@@ -865,7 +885,13 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                     ip = str(net)
 
                 is_icmp = keys['proto'] == 'icmp'
-                pattern = _COMMAND_FORMAT_PATTERN[is_icmp][dir]
+                rule_ext = ''
+                if not is_icmp and dir == 'ingress' and \
+                        keys.get('port_min') is None and \
+                        keys.get('port_max') is None:
+                    rule_ext = '_norange'
+
+                pattern = _COMMAND_FORMAT_PATTERN[is_icmp][dir + rule_ext]
                 cmd = fmt.format(pattern, host=ip, **keys).strip()
                 processed_cmds[dir].append(cmd)
         return min_distance

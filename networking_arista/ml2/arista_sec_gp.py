@@ -172,6 +172,26 @@ _COMMAND_PARSE_PATTERN = {
             r"(?: (?P<port_min>\w+))?"
             r"(?: (?P<port_max>\w+))?$"
         ),
+    },
+    'dhcp': {
+        'ingress': re.compile(
+            r"^permit (?P<proto>udp) "
+            r"(?:host )?"
+            r"(?P<host>\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,3})?|any)"
+            r"(?P<src_range> eq \w+) "
+            r"any"
+            r" eq (?=(?P<port_min>\w+)$)(?P<port_max>\w+)"
+            r"(?P<flags> \w+)?$"  # will never match any flags
+        ),
+        'egress': re.compile(
+            r"^permit (?P<proto>udp) "
+            r"any"
+            r"(?P<src_range> eq \w+) "
+            r"(?:host )?"
+            r"(?P<host>\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,3})?|any)"
+            r"(?P<dst_range> eq (?=(?P<port_min>\w+)$)(?P<port_max>\w+))$"
+            r"(?P<flags> \w+)?$"  # will never match any flags
+        ),
     }
 }
 
@@ -919,8 +939,10 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             for cmd in cmds[_dir]:
                 parsed_rule = None
                 if not cmd.startswith("permit icmp"):
+                    # parse rule for tcp/udp (False) or dhcp, if eq is present
+                    rule_type = 'dhcp' if ' eq ' in cmd else False
                     parsed_rule = \
-                        _COMMAND_PARSE_PATTERN[False][_dir].match(cmd)
+                        _COMMAND_PARSE_PATTERN[rule_type][_dir].match(cmd)
                     if parsed_rule:
                         # check if this rule covers all ports
                         covers_all_ports = False

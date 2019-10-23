@@ -883,6 +883,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                         "any range 23 42 syn",
                         "permit tcp 100.23.26.0/24 any syn",
                         "permit tcp any any established",
+                        "permit udp any eq 67 any eq 68",
                     ],
                     'egress': [
                         "permit udp any host 100.23.23.1 range 23 42",
@@ -909,6 +910,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                         "100.23.26.0/24 range 23 42 syn",
                         "permit tcp any 100.23.26.0/24 syn",
                         "permit tcp any any established",
+                        "permit udp any eq 68 any eq 67",
                     ],
                 },
                 'expected': {
@@ -920,6 +922,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                         "permit udp 100.23.26.0/24 any range 10 1000",
                         "permit tcp 100.23.26.0/24 any syn",
                         "permit tcp any any established",
+                        "permit udp any eq 67 any eq 68",
                     ],
                     'egress': [
                         "permit udp any host 100.23.23.1 range 0 65535",
@@ -930,6 +933,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                         "permit udp any 100.23.26.0/24 range 10 1000",
                         "permit tcp any 100.23.26.0/24 syn",
                         "permit tcp any any established",
+                        "permit udp any eq 68 any eq 67",
                     ],
                 },
             },
@@ -937,6 +941,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                 'input': {
                     'ingress': [
                         "permit udp any any",
+                        "permit udp any eq 67 any eq 68",
                         "permit udp host 100.23.23.1 any range 0 65535",
                         "permit udp host 100.23.23.3 any",
                         "permit udp 100.23.24.0/24 any range tcpmux 65535",
@@ -951,6 +956,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                     ],
                     'egress': [
                         "permit udp any any",
+                        "permit udp any eq 68 any eq 67",
                         "permit udp any host 100.23.23.1 range 0 65535",
                         "permit udp any host 100.23.23.4",
                         "permit udp any 100.23.24.0/24 "

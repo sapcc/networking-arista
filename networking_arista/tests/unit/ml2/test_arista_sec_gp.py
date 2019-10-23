@@ -759,41 +759,44 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                 (
                     "permit tcp any any range 3141 3141 syn",
                     {'proto': 'tcp', 'src_range': None, 'host': 'any',
-                     'dst_range': ' range 3141 3141', 'flags': ' syn'}
+                     'dst_range': ' range 3141 3141', 'flags': ' syn',
+                     'port_min': '3141', 'port_max': '3141'}
                 ),
                 (
                     "permit udp any host 10.123.45.67 range 3141 3141",
                     {'proto': 'udp', 'src_range': None,
                      'host': '10.123.45.67', 'dst_range': ' range 3141 3141',
-                     'flags': None}
+                     'flags': None, 'port_min': '3141', 'port_max': '3141'}
                 ),
                 (
                     "permit udp any 10.123.45.8/30 range 3141 3141",
                     {'proto': 'udp', 'src_range': None,
                      'host': '10.123.45.8/30', 'dst_range': ' range 3141 3141',
-                     'flags': None}
+                     'flags': None, 'port_min': '3141', 'port_max': '3141'}
                 ),
                 (
                     "permit udp any 10.123.45.8/30 range 3141 3141",
                     {'proto': 'udp', 'src_range': None,
                      'host': '10.123.45.8/30', 'dst_range': ' range 3141 3141',
-                     'flags': None}
+                     'flags': None, 'port_min': '3141', 'port_max': '3141'}
                 ),
                 (
                     "permit udp any any range ftp ssh",
                     {'proto': 'udp', 'src_range': None, 'host': 'any',
-                     'dst_range': ' range ftp ssh', 'flags': None}
+                     'dst_range': ' range ftp ssh', 'flags': None,
+                     'port_min': 'ftp', 'port_max': 'ssh'}
                 ),
                 (
                     "permit udp any 10.123.45.8/30",
                     {'proto': 'udp', 'src_range': None,
                      'host': '10.123.45.8/30', 'dst_range': None,
-                     'flags': None}
+                     'flags': None, 'port_min': None, 'port_max': None}
                 ),
                 (
                     "permit tcp any any syn",
                     {'proto': 'tcp', 'src_range': None, 'host': 'any',
-                     'dst_range': None, 'flags': ' syn'}
+                     'dst_range': None, 'flags': ' syn',
+                     'port_min': None, 'port_max': None}
                 ),
             ],
         }
@@ -847,6 +850,143 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         self.drv.max_rules = 1
         ret = self.drv._consolidate_cmds(rules)
         self.assertEqual(expected_result, ret)
+
+    def test_consolidate_portranges_cmds(self):
+        # missing tests: tcp flags, udp ephemeral ranges
+        rules = [
+            {
+                'input': {
+                    'ingress': [
+                        "permit udp host 100.23.23.1 any range 23 42",
+                        "permit udp host 100.23.23.1 any range 0 65535",
+                        "permit udp host 100.23.23.1 any range 10 1000",
+                        "permit udp host 100.23.23.1 range 9000 65535 "
+                        "any range 10 1000",
+
+                        "permit udp host 100.23.23.3 any range 23 42",
+                        "permit udp host 100.23.23.3 any",
+                        "permit udp host 100.23.23.3 any range 10 1000",
+                        "permit udp host 100.23.23.3 range 9000 65535 "
+                        "any range 10 1000",
+
+                        "permit udp 100.23.24.0/24 any range 23 42",
+                        "permit udp 100.23.24.0/24 any range tcpmux 65535",
+                        "permit udp 100.23.24.0/24 any range 10 1000",
+                        "permit udp 100.23.24.0/24 range 9000 65535 "
+                        "any range 10 1000",
+
+                        "permit udp 100.23.26.0/24 any range 23 42",
+                        "permit udp 100.23.26.0/24 any range 10 1000",
+
+                        "permit tcp 100.23.26.0/24 any range 23 42 syn",
+                        "permit tcp 100.23.26.0/24 range 9000 65535 "
+                        "any range 23 42 syn",
+                        "permit tcp 100.23.26.0/24 any syn",
+                        "permit tcp any any established",
+                    ],
+                    'egress': [
+                        "permit udp any host 100.23.23.1 range 23 42",
+                        "permit udp any host 100.23.23.1 range 0 65535",
+                        "permit udp any host 100.23.23.1 range 10 1000",
+                        "permit udp any range 9000 65535 "
+                        "host 100.23.23.1 range 10 1000",
+
+                        "permit udp any host 100.23.23.4 range 23 42",
+                        "permit udp any host 100.23.23.4",
+                        "permit udp any host 100.23.23.4 range 10 1000",
+                        "permit udp any range 9000 65535 "
+                        "host 100.23.23.4 range 10 1000",
+
+                        "permit udp any 100.23.24.0/24 range 23 42",
+                        "permit udp any 100.23.24.0/24 range tcpmux 65535",
+                        "permit udp any 100.23.24.0/24 range 10 1000",
+
+                        "permit udp any 100.23.26.0/24 range 23 42",
+                        "permit udp any 100.23.26.0/24 range 10 1000",
+
+                        "permit tcp any 100.23.26.0/24 range 23 42 syn",
+                        "permit tcp any range 9000 65535 "
+                        "100.23.26.0/24 range 23 42 syn",
+                        "permit tcp any 100.23.26.0/24 syn",
+                        "permit tcp any any established",
+                    ],
+                },
+                'expected': {
+                    'ingress': [
+                        "permit udp host 100.23.23.1 any range 0 65535",
+                        "permit udp host 100.23.23.3 any",
+                        "permit udp 100.23.24.0/24 any range tcpmux 65535",
+                        "permit udp 100.23.26.0/24 any range 23 42",
+                        "permit udp 100.23.26.0/24 any range 10 1000",
+                        "permit tcp 100.23.26.0/24 any syn",
+                        "permit tcp any any established",
+                    ],
+                    'egress': [
+                        "permit udp any host 100.23.23.1 range 0 65535",
+                        "permit udp any host 100.23.23.4",
+                        "permit udp any 100.23.24.0/24 "
+                        "range tcpmux 65535",
+                        "permit udp any 100.23.26.0/24 range 23 42",
+                        "permit udp any 100.23.26.0/24 range 10 1000",
+                        "permit tcp any 100.23.26.0/24 syn",
+                        "permit tcp any any established",
+                    ],
+                },
+            },
+            {
+                'input': {
+                    'ingress': [
+                        "permit udp any any",
+                        "permit udp host 100.23.23.1 any range 0 65535",
+                        "permit udp host 100.23.23.3 any",
+                        "permit udp 100.23.24.0/24 any range tcpmux 65535",
+                        "permit udp 100.23.26.0/24 any range 23 42",
+
+                        "permit tcp any any established",
+                        "permit tcp any any syn",
+                        "permit tcp 100.23.26.0/24 any syn",
+                        "permit tcp 100.23.26.0/24 any range 2 3 syn",
+                        "permit tcp 100.23.26.0/24 range 4 5 "
+                        "any range 2 3 syn",
+                    ],
+                    'egress': [
+                        "permit udp any any",
+                        "permit udp any host 100.23.23.1 range 0 65535",
+                        "permit udp any host 100.23.23.4",
+                        "permit udp any 100.23.24.0/24 "
+                        "range tcpmux 65535",
+
+                        "permit tcp any any established",
+                        "permit tcp any any syn",
+                        "permit tcp any 100.23.26.0/24 syn",
+                        "permit tcp any 100.23.26.0/24 range 2 3 syn",
+                    ],
+                },
+                'expected': {
+                    'ingress': [
+                        "permit udp any any",
+                        "permit tcp any any established",
+                        "permit tcp any any syn",
+                    ],
+                    'egress': [
+                        "permit udp any any",
+                        "permit tcp any any established",
+                        "permit tcp any any syn",
+                    ],
+                },
+            }
+        ]
+
+        for ruleset in rules:
+            if ruleset.get("lossy"):
+                self.drv.max_rules = 1
+            else:
+                self.drv.max_rules = 100
+            ret = self.drv._consolidate_cmds(ruleset['input'])
+            for _dir in 'egress', 'ingress':
+                self.assertEqual(set(ruleset['expected'][_dir]),
+                                 set(ret[_dir]),
+                                 'Direction {}'.format(_dir))
 
     def test_clear_hostbits_from_acl(self):
         rules = [

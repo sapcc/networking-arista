@@ -151,7 +151,7 @@ _COMMAND_PARSE_PATTERN = {
             r"(?P<src_range> range \w+ \w+)? "
             r"(?:host )?"
             r"(?P<host>\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,3})?|any)"
-            r"(?P<dst_range> range \w+ \w+)?"
+            r"(?P<dst_range> range (?P<port_min>\w+) (?P<port_max>\w+))?"
             r"(?P<flags> syn)?$"
         ),
     },
@@ -896,6 +896,74 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                 processed_cmds[dir].append(cmd)
         return min_distance
 
+    def _consolidate_portranges(self, cmds):
+        """Remove rules for which we already have a portless permit
+
+        If we already permit all tcp traffic for 10.0.0.0/8 syn, then
+        we don't need any other rules specifying port ranges
+        """
+        def make_key(parsed_rule, ignore_host=False, ignore_src_range=False):
+            host = 'any' if ignore_host else parsed_rule.group('host')
+            src_range = None if ignore_src_range else \
+                parsed_rule.group('src_range')
+
+            return (parsed_rule.group('proto'),
+                    host,
+                    src_range,
+                    parsed_rule.group('flags'))
+
+        processed_cmds = {'ingress': [], 'egress': []}
+        for _dir in DIRECTIONS:
+            parsed_rules = []
+            covering_rules = set()
+            for cmd in cmds[_dir]:
+                parsed_rule = None
+                if not cmd.startswith("permit icmp"):
+                    parsed_rule = \
+                        _COMMAND_PARSE_PATTERN[False][_dir].match(cmd)
+                    if parsed_rule:
+                        # check if this rule covers all ports
+                        covers_all_ports = False
+                        if parsed_rule.group('port_min') in \
+                                ('0', '1', 'tcpmux', None) and \
+                                parsed_rule.group('port_max') \
+                                in ('65535', None):
+                            key = make_key(parsed_rule)
+                            covering_rules.add(key)
+                            covers_all_ports = True
+                        parsed_rules.append((
+                            cmd, parsed_rule, covers_all_ports))
+                if not parsed_rule:
+                    parsed_rules.append((cmd, None, None))
+
+            for rule, parsed_rule, covers_all_ports in parsed_rules:
+                if parsed_rule:
+                    # find out if a rule exists that is not this rule but
+                    # covers us by having no port range, (no port range and no
+                    # src port range) or (no port range, no src port range and
+                    # no host) specified - if so, drop the rule
+                    rule_key = make_key(parsed_rule)
+                    rule_nosrc = make_key(parsed_rule, ignore_src_range=True)
+                    rule_proto = make_key(parsed_rule, ignore_src_range=True,
+                                          ignore_host=True)
+                    if not covers_all_ports and rule_key in covering_rules or \
+                        (not covers_all_ports or rule_key != rule_nosrc) and \
+                        rule_nosrc in covering_rules or \
+                        (not covers_all_ports or rule_key != rule_proto) and \
+                            rule_proto in covering_rules:
+                        # ignore rule
+                        pass
+                    else:
+                        processed_cmds[_dir].append(rule)
+                else:
+                    processed_cmds[_dir].append(rule)
+
+        LOG.debug("Consolidated ACLs port merge result from %d/%d to %d/%d",
+                  len(cmds['ingress']), len(cmds['egress']),
+                  len(processed_cmds['ingress']),
+                  len(processed_cmds['egress']))
+        return processed_cmds
+
     def _consolidate_cmds(self, cmds):
         num_ingress = len(cmds['ingress'])
         num_egress = len(cmds['egress'])
@@ -903,6 +971,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         lossy = 0 < self.max_rules < num_rules
         min_prefixlen = 32  # Assumption -> no lossy compression needed
 
+        # consolidate based on src/dst ip, merge ranges
         while min_prefixlen >= 0:
             processed_cmds = {'ingress': [], 'egress': []}
             min_distance = None
@@ -945,6 +1014,10 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                        num_egress,
                        len(processed_cmds['ingress']),
                        len(processed_cmds['egress'])))
+
+        # consolidate based on src/dst port
+        processed_cmds = self._consolidate_portranges(processed_cmds)
+
         return processed_cmds
 
     @staticmethod

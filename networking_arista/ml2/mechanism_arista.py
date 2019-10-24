@@ -109,7 +109,8 @@ class AristaDriver(api.MechanismDriver):
         self.rpc.clear_region_updated_time()
         self.sg_handler = sec_group_callback.AristaSecurityGroupHandler(self)
         self.timer.start(self.sync_timeout, stop_on_exception=False)
-        self._config_save_loop.start(self.save_config_interval, stop_on_exception=False)
+        self._config_save_loop.start(self.save_config_interval,
+                                     stop_on_exception=False)
 
     def create_network_precommit(self, context):
         """Remember the tenant, and network information."""

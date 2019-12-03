@@ -48,7 +48,6 @@ class SyncService(object):
         self._region_updated_time = None
         self._coordinator = None
         self._member_id = None
-        self._is_leader = False
         self._setup_coordination()
 
     def _setup_coordination(self):
@@ -68,23 +67,24 @@ class SyncService(object):
 
         coordinator.start()
 
-        group_id = six.binary_type(
+        self._group_id = six.binary_type(
             six.text_type('ml2_arista_sync_service').encode('ascii'))
 
         try:
-            request = coordinator.create_group(group_id)
+            request = coordinator.create_group(self._group_id)
             request.get()
         except coordination.GroupAlreadyExist:
             pass
 
-        request = coordinator.join_group(group_id)
+        request = coordinator.join_group(self._group_id)
         request.get()
 
         coordinator.watch_elected_as_leader(
-            group_id, self._become_leader)
+            self._group_id, self._become_leader)
 
     def _become_leader(self, event):
-        self._is_leader = event.member_id == self._member_id
+        if event.member_id == self._member_id:
+            LOG.info("I am the new leader!")
 
     def force_sync(self):
         """Sets the force_sync flag."""
@@ -96,7 +96,8 @@ class SyncService(object):
 
         self._coordinator.heartbeat()
         self._coordinator.run_watchers()
-        return self._is_leader
+        current_leader = self._coordinator.get_leader(self._group_id).get()
+        return current_leader == self._member_id
 
     def save_switch_configs(self):
         """Let each switch write its running-config to its startup-config"""

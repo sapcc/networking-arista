@@ -61,7 +61,9 @@ class SyncService(object):
             cfg.CONF.ml2_arista.coordinator_url,
             self._member_id,
             [coordination.Characteristics.DISTRIBUTED_ACROSS_HOSTS],
-            membership_timeout=cfg.CONF.ml2_arista.sync_interval * 2
+            membership_timeout=cfg.CONF.ml2_arista.sync_interval * 2,
+            leader_timeout=cfg.CONF.ml2_arista.sync_interval * 2,
+            lock_timeout=cfg.CONF.ml2_arista.sync_interval * 2,
         )
         self._coordinator = coordinator
 

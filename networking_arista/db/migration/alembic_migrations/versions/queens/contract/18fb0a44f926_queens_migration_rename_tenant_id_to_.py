@@ -13,6 +13,9 @@
 #    under the License.
 #
 from alembic import op
+import sqlalchemy as sa
+
+from neutron_lib.db import constants as db_const
 
 """Queens migration: rename tenant_id to project_id
 
@@ -47,7 +50,11 @@ def upgrade():
               'arista_provisioned_vms',
               'arista_provisioned_projects']
     for table_name in tables:
-        op.alter_column(table_name, 'tenant_id', new_column_name='project_id')
+        op.alter_column(table_name,
+                        'tenant_id',
+                        new_column_name='project_id',
+                        type_=sa.String(length=db_const.PROJECT_ID_FIELD_SIZE),
+                        existing_type=sa.VARCHAR(length=255))
 
         # create index
         idx_name = 'ix_{}_project_id'.format(table_name)

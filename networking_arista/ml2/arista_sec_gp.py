@@ -1533,7 +1533,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         # Get the port-channel memberships
         try:
             for k, pc in six.iteritems(self._get_interface_membership(
-                    server, port_security_groups.iterkeys())):
+                    server, port_security_groups.keys())):
                 if pc not in port_security_groups:
                     port_security_groups[pc] = port_security_groups[k]
         except Exception:

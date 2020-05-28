@@ -57,27 +57,44 @@ def fake_send_eapi_req(switch_ip, switch_user, switch_pass, cmds):
                  'configuredEgressIntfs': [],
                  'configuredIngressIntfs': []}
             ]})
-        elif 'show port-channel summary':
-            data = {
-                     "numberOfChannelsInUse": 2,
-                     "portChannels": {
-                          "Port-Channel104": {
-                               "ports": {
-                                   "Ethernet19/4": {},
-                                   "Ethernet19/3": {},
-                                   "PeerEthernet19/4": {},
-                                   "PeerEthernet19/3": {}
-                               }
-                          },
-                          "Port-Channel100": {
-                              "ports": {
-                                  "Ethernet17/1": {},
-                                  "Ethernet61/1": {}
+        elif 'show port-channel summary' == cmd:
+            if switch_ip == 'switch1':
+                data = {
+                         "numberOfChannelsInUse": 2,
+                         "portChannels": {
+                              "Port-Channel104": {
+                                   "ports": {
+                                       "Ethernet19/4": {},
+                                       "Ethernet19/3": {},
+                                       "PeerEthernet19/4": {},
+                                       "PeerEthernet19/3": {}
+                                   }
+                              },
+                              "Port-Channel100": {
+                                  "ports": {
+                                      "Ethernet17/1": {},
+                                      "Ethernet61/1": {}
+                                  }
                               }
-                          }
+                         }
                      }
-                 }
+            else:
+                data = {
+                         "numberOfChannelsInUse": 1,
+                         "portChannels": {
+                              "Port-Channel104": {
+                                   "ports": {
+                                       "Ethernet19/4": {},
+                                       "Ethernet19/3": {},
+                                       "PeerEthernet19/4": {},
+                                       "PeerEthernet19/3": {}
+                                   }
+                              },
+                         }
+                     }
             ret.append(data)
+        elif "show mlag detail" == cmd and switch_ip == "switch1":
+            ret.append({'detail': {'peerMacAddress': '00-34-56-78-90-12'}})
         else:
             ret.append(None)
     return ret
@@ -96,6 +113,8 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         arista_sec_gp.AristaSwitchRPCMixin._SERVER_BY_ID = dict()
         arista_sec_gp.AristaSwitchRPCMixin._SERVER_BY_IP = dict()
         arista_sec_gp.AristaSwitchRPCMixin._INTERFACE_MEMBERSHIP = \
+            defaultdict(dict)
+        arista_sec_gp.AristaSwitchRPCMixin._PORTCHANNEL_MEMERSHIP = \
             defaultdict(dict)
 
         patcher = mock.patch('networking_arista.ml2.mechanism_arista.db_lib',
@@ -1068,3 +1087,25 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
         self.drv._get_interface_membership(server, ['Ethernet19/4'])
 
         self.assertEqual(id(d), id(self.drv._INTERFACE_MEMBERSHIP[server]))
+
+    def test_get_portchannel_membership(self):
+        server = self.drv._get_server_by_ip('switch1')
+        ifs = self.drv._get_portchannel_membership(server, "Port-Channel104")
+        expected = {"Ethernet19/3", "Ethernet19/4",
+                    "PeerEthernet19/3", "PeerEthernet19/4"}
+        self.assertEqual(expected, ifs)
+
+    def test_get_mlag_pc_members_from_iface(self):
+        cfg.CONF.set_override('switch_info',
+                              ['switch1:user:pass', 'switch2:user:pass'],
+                              'ml2_arista')
+
+        server = self.drv._get_server('switch1')
+        server2 = self.drv._get_server('switch2')
+        expected = {(server, "Ethernet19/3"), (server, "Ethernet19/4"),
+                    (server, "Port-Channel104"),
+                    (server2, "Ethernet19/3"), (server2, "Ethernet19/4"),
+                    (server2, "Port-Channel104")}
+
+        ifs = self.drv._get_mlag_pc_members_from_iface(server, "Ethernet19/3")
+        self.assertEqual(expected, set(ifs))

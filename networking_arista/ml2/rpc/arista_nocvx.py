@@ -12,6 +12,7 @@
 # implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from collections import defaultdict
 
 from oslo_log import log as logging
 import six
@@ -121,6 +122,9 @@ class AristaRPCWrapperNoCvx(AristaRPCWrapperBase,
                         neutron_port_id, network_id, switch_bindings, segments)
             return
 
+        # get all information out of the port
+        vlan_id = get_attr_or_item(segments[-1], 'segmentation_id')
+        iface_dict = defaultdict(set)
         for binding in switch_bindings:
             if not binding:
                 continue
@@ -131,23 +135,29 @@ class AristaRPCWrapperNoCvx(AristaRPCWrapperBase,
                 LOG.warning("Unknown server for port-binding %s", binding)
                 continue
 
-            port_id = binding['port_id']
-            vlan_id = get_attr_or_item(segments[-1], 'segmentation_id')
+            switchport = binding['port_id']
+            iface_dict[server].add(switchport)
 
-            interfaces = [port_id]
-            for pc in six.itervalues(
-                    self._get_interface_membership(server, [port_id])):
-                if pc:
-                    interfaces.append(pc)
+        # find all members of all portchannels we might have to change
+        for server in list(iface_dict):
+            for iface in list(iface_dict[server]):
+                if iface.startswith("Port-Channel"):
+                    continue
+                ifs = self._get_mlag_pc_members_from_iface(server, iface)
+                for _server, _if in ifs:
+                    iface_dict[_server].add(_if)
 
+        LOG.debug("Unplug network event for port %s, dict is %s",
+                  neutron_port_id, iface_dict)
+        for server, ifaces in iface_dict.items():
             cmds = [
                 'enable',
                 'configure',
             ]
 
-            for interface in interfaces:
+            for iface in ifaces:
                 cmds.extend([
-                    'interface %s' % interface,
+                    'interface %s' % iface,
                     'switchport trunk allowed vlan remove %d' % vlan_id,
                     'exit',
                 ])

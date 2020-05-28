@@ -233,6 +233,7 @@ class AristaSwitchRPCMixin(object):
     _SERVER_BY_ID = dict()
     _SERVER_BY_IP = dict()
     _INTERFACE_MEMBERSHIP = collections.defaultdict(dict)
+    _PORTCHANNEL_MEMBERSHIP = collections.defaultdict(dict)
 
     def __init__(self, *args, **kwargs):
         super(AristaSwitchRPCMixin, self).__init__()
@@ -299,6 +300,7 @@ class AristaSwitchRPCMixin(object):
     def _refresh_interface_membership(self, server):
         """Update portchannel interface membership from switch"""
         membership = {}
+        pc_members = collections.defaultdict(set)
 
         ret = server(["show port-channel summary"])
         if ret and ret[0]:
@@ -306,9 +308,11 @@ class AristaSwitchRPCMixin(object):
             for pc in switch_pcs:
                 for iface in switch_pcs[pc]['ports']:
                     membership[iface] = pc
+                    pc_members[pc].add(iface)
 
         if membership:
             self._INTERFACE_MEMBERSHIP[server] = membership
+            self._PORTCHANNEL_MEMBERSHIP[server] = pc_members
 
     def _get_interface_membership(self, server, ports):
         """Get portchannel membership information for a list of ports"""
@@ -324,6 +328,56 @@ class AristaSwitchRPCMixin(object):
                 membership[port] = ifm[port]
 
         return membership
+
+    def _get_portchannel_membership(self, server, portchannel):
+        """Get portchannel membership information for a list of ports"""
+        if portchannel not in self._PORTCHANNEL_MEMBERSHIP[server]:
+            self._refresh_interface_membership(server)
+
+        return self._PORTCHANNEL_MEMBERSHIP[server][portchannel]
+
+    def _get_mlag_neighbor_server(self, server):
+        """Get the server() for an mlag neighbor of a server()"""
+        # find mlag neighbor
+        mlag_detail = server(["show mlag detail"])
+        if not (mlag_detail and mlag_detail[0]):
+            LOG.warning("Could not fetch mlag details on %s", server)
+            return None
+        neigh = EUI(mlag_detail[0]['detail']['peerMacAddress'])
+        neigh_server = self._get_server(self, switch_id=neigh)
+        if not neigh_server:
+            LOG.warning("Could not find mlag neighbor %s in switch list",
+                        neigh, server)
+            return None
+        return neigh_server
+
+    def _get_mlag_pc_members_from_iface(self, server, port_id):
+        """Find all ifaces for a pc on an mlag switchpair
+
+        Starting with an interface we find the pc and mlag peer, then
+        grab all ifaces belonging to this pc on both sides of the mlag
+        """
+        result = set()
+        result.add((server, port_id))
+
+        pcs = self._get_interface_membership(server, [port_id])
+        if not pcs:
+            return result
+
+        pc = pcs[port_id]
+        servers = [server]
+        mlag_neighbor = self._get_mlag_neighbor_server(server)
+        if mlag_neighbor:
+            servers.append(mlag_neighbor)
+
+        for _server in servers:
+            result.add((_server, pc))
+            ifaces = self._get_portchannel_membership(_server, pc)
+            for iface in ifaces:
+                if not iface.startswith("Peer"):
+                    result.add((_server, iface))
+
+        return result
 
     def _send_eapi_req(self, switch_ip, switch_user, switch_pass, cmds):
         # This method handles all EAPI requests (using the requests library)

@@ -290,7 +290,7 @@ class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
         setup_valid_config()
         ndb = db_lib.NeutronNets()
         mock_arista = mock_json_server.return_value
-        mock_arista.runCmds.return_value = [{'chassisId': '01-23-45-67-89-01'}]
+        mock_arista.runCmds.return_value = [{'chassisId': '00-23-45-67-89-01'}]
 
         self.drv = AristaRPCWrapperJSON(ndb)
         self.drv._server_ip = "10.11.12.13"
@@ -940,7 +940,7 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
         setup_valid_config()
         ndb = db_lib.NeutronNets()
         mock_arista = mock_json_server.return_value
-        mock_arista.runCmds.return_value = [{'chassisId': '01-23-45-67-89-01'}]
+        mock_arista.runCmds.return_value = [{'chassisId': '00-23-45-67-89-01'}]
         self.drv = arista_eapi.AristaRPCWrapperEapi(ndb)
         self.drv._server_ip = "10.11.12.13"
         self.region = 'RegionOne'
@@ -1632,7 +1632,7 @@ class NegativeRPCWrapperTestCase(testlib_api.SqlTestCase):
     def test_exception_is_raised_on_json_server_error(self, mock_json_server):
         # Mock for maintain_connections
         mock_arista = mock_json_server.return_value
-        mock_arista.runCmds.return_value = [{'chassisId': '01-23-45-67-89-01'}]
+        mock_arista.runCmds.return_value = [{'chassisId': '00-23-45-67-89-01'}]
 
         ndb = db_lib.NeutronNets()
         drv = arista_eapi.AristaRPCWrapperEapi(ndb)

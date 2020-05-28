@@ -41,9 +41,9 @@ def fake_send_eapi_req(switch_ip, switch_user, switch_pass, cmds):
     for cmd in cmds:
         if 'show lldp local-info management 1' == cmd:
             if switch_ip == 'switch2':
-                ret.append({'chassisId': '02-34-56-78-90-12'})
+                ret.append({'chassisId': '00-34-56-78-90-12'})
             else:
-                ret.append({'chassisId': '01-23-45-67-89-01'})
+                ret.append({'chassisId': '00-23-45-67-89-01'})
         elif 'show ip access-lists' == cmd:
             cur_dir = os.path.dirname(os.path.realpath(__file__))
             ret.append(json.load(open(cur_dir + '/jsonrpc.json')))
@@ -259,7 +259,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
                 'direction': direction
                 }
 
-    def _get_existing_acls(self, sg_id, server_id=EUI('01-23-45-67-89-01')):
+    def _get_existing_acls(self, sg_id, server_id=EUI('00-23-45-67-89-01')):
         return {
             self.drv._SERVER_BY_ID[server_id]: {
                 self.drv._arista_acl_name(sg_id, 'ingress'): [
@@ -621,7 +621,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
             'profile': {
                 'local_link_information': [
                     {'switch_info': 'switch1',
-                     'switch_id': '01-23-45-67-89-01',
+                     'switch_id': '00-23-45-67-89-01',
                      'port_id': 'portx'
                      },
                 ]

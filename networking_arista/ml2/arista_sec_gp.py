@@ -341,13 +341,15 @@ class AristaSwitchRPCMixin(object):
         # find mlag neighbor
         mlag_detail = server(["show mlag detail"])
         if not (mlag_detail and mlag_detail[0]):
-            LOG.warning("Could not fetch mlag details on %s", server)
+            LOG.warning("Could not fetch mlag details on switch %s",
+                        self._get_info_by_server(server))
             return None
         neigh = EUI(mlag_detail[0]['detail']['peerMacAddress'])
         neigh_server = self._get_server(self, switch_id=neigh)
         if not neigh_server:
-            LOG.warning("Could not find mlag neighbor %s in switch list",
-                        neigh, server)
+            LOG.warning("Could not find mlag neighbor %s in switch list "
+                        "on server %s",
+                        neigh, self._get_info_by_server(server))
             return None
         return neigh_server
 
@@ -512,6 +514,19 @@ class AristaSwitchRPCMixin(object):
     @property
     def _server_by_id(self):
         return self._SERVER_BY_ID
+
+    def _get_id_by_server(self, server):
+        for _idx, _srv in self._SERVER_BY_ID.items():
+            if _srv == server:
+                return _idx
+
+    def _get_ip_by_server(self, server):
+        for _idx, _srv in self._SERVER_BY_IP.items():
+            if _srv == server:
+                return _idx
+
+    def _get_info_by_server(self, server):
+        return self._get_id_by_server(server), self._get_ip_by_server(server)
 
     def _get_server_by_id(self, switch_id):
         return switch_id and self._SERVER_BY_ID.get(EUI(switch_id))

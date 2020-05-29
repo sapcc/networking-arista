@@ -859,7 +859,17 @@ class AristaDriver(api.MechanismDriver):
                     )
 
         try:
-            if not cfg.CONF.ml2_arista.skip_unplug:
+            device_ports = db_lib.get_bm_ports_for_device(
+                context._plugin_context, device_id)
+            port_net_in_use = False
+            for device_port in device_ports:
+                if device_port.id != port_id and \
+                        device_port.network_id == network_id:
+                    LOG.warning("Will not deprovision network %s on port %s "
+                                "as port %s is still on this network",
+                                network_id, port_id, device_port.id)
+                    port_net_in_use = True
+            if not cfg.CONF.ml2_arista.skip_unplug and not port_net_in_use:
                 hostname = self._host_name(host)
                 self.rpc.unplug_port_from_network(
                     device_id, device_owner, hostname, port_id, network_id,

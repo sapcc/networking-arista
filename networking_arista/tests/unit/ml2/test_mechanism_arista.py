@@ -569,6 +569,8 @@ class AristaDriverTestCase(testlib_api.SqlTestCase):
         expected_calls = [
             mock.call.__nonzero__(),
             mock.call.get_physical_network(host_id, context=port_context),
+            mock.call.get_bm_ports_for_device(plugin_context, device_id),
+            mock.call.get_bm_ports_for_device().__getattr__('__iter__')(),
             mock.call.unplug_port_from_network(
                 device_id, 'compute', host_id, port_id, network_id, tenant_id,
                 None, vnic_type, switch_bindings=profile,
@@ -619,6 +621,8 @@ class AristaDriverTestCase(testlib_api.SqlTestCase):
 
         expected_calls += [
             mock.call.get_physical_network(host_id, context=port_context),
+            mock.call.get_bm_ports_for_device(plugin_context, device_id),
+            mock.call.get_bm_ports_for_device().__getattr__('__iter__')(),
             mock.call.unplug_port_from_network(
                 device_id, 'compute', host_id, port_id, network_id,
                 INTERNAL_TENANT_ID, None, vnic_type,
@@ -867,6 +871,8 @@ class AristaDriverTestCase(testlib_api.SqlTestCase):
             mock.call.create_network_segments(tenant_id, network_id,
                                               network_name,
                                               segments),
+            mock.call.get_bm_ports_for_device(plugin_context, device_id),
+            mock.call.get_bm_ports_for_device().__getattr__('__iter__')(),
             mock.call.unplug_port_from_network(
                 device_id, 'compute', orig_host_id, port_id,
                 network_id, tenant_id, None, vnic_type,
@@ -938,6 +944,8 @@ class AristaDriverTestCase(testlib_api.SqlTestCase):
             mock.call.create_network_segments(INTERNAL_TENANT_ID, network_id,
                                               network_name,
                                               segments),
+            mock.call.get_bm_ports_for_device(plugin_context, device_id),
+            mock.call.get_bm_ports_for_device().__getattr__('__iter__')(),
             mock.call.unplug_port_from_network(device_id, 'compute',
                                                orig_host_id,
                                                port_id, network_id,
@@ -1044,6 +1052,8 @@ class AristaDriverTestCase(testlib_api.SqlTestCase):
             mock.call.create_network_segments(tenant_id, network_id,
                                               network_name,
                                               segments),
+            mock.call.get_bm_ports_for_device(plugin_context, device_id),
+            mock.call.get_bm_ports_for_device().__getattr__('__iter__')(),
             mock.call.unplug_port_from_network(device_id, owner,
                                                orig_host_id,
                                                port_id, network_id,

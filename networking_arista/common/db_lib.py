@@ -427,6 +427,22 @@ def get_all_baremetal_ports(context):
             for bm_port in bm_ports}
 
 
+def get_bm_ports_for_device(context, device_id):
+    """Get baremetal ports for a device"""
+    session = context.session
+    query = (session.query(models_v2.Port.id,
+                           models_v2.Port.network_id,
+                           ml2_models.PortBinding.vnic_type,
+                           ml2_models.PortBinding.host,
+                           ml2_models.PortBinding.profile)
+                    .filter(models_v2.Port.device_id == device_id)
+                    .filter(ml2_models.PortBinding.vnic_type == 'baremetal')
+                    .filter(ml2_models.PortBinding.vif_type == 'other')
+                    .filter(models_v2.Port.id ==
+                            ml2_models.PortBinding.port_id))
+    return query.all()
+
+
 def get_all_portbindings(context):
     """Returns a list of all ports bindings."""
     session = context.session

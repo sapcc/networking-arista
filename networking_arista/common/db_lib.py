@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from neutron.db import api as db_api
 from neutron.db import db_base_plugin_v2
 from neutron.db.models import allowed_address_pair as aap_models
 from neutron.db.models import securitygroup as sg_models
@@ -23,6 +22,7 @@ from neutron.db import securitygroups_db as sec_db
 from neutron.db import segments_db
 from neutron.plugins.ml2 import models as ml2_models
 from neutron_lib import constants as p_const
+from neutron_lib.db import api as db_api
 from neutron_lib.plugins.ml2 import api
 from sqlalchemy import literal
 

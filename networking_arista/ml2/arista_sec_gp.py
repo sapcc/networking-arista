@@ -14,7 +14,6 @@
 
 import collections
 import inspect
-import itertools
 import json
 import math
 import re
@@ -25,8 +24,9 @@ import socket
 from copy import copy
 from eventlet.greenpool import GreenPool as Pool
 from hashlib import sha1
-from httplib import HTTPException
+from http.client import HTTPException
 from six.moves.urllib.parse import urlparse
+from six.moves import zip
 
 from netaddr import AddrFormatError
 from netaddr import EUI
@@ -948,7 +948,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                     pass
             return network
 
-        min_distance = None
+        min_distance = ANY_IP_V4.last
 
         for keys, ips in six.iteritems(consolidation_dict):
             if 'any' in ips:
@@ -962,7 +962,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
             for net in sorted(ipset.iter_cidrs()):
                 if previous:
                     distance = net.first - previous.last
-                    if min_distance is None or distance < min_distance:
+                    if distance < min_distance:
                         min_distance = distance
                 previous = net
 
@@ -1113,7 +1113,6 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
     @staticmethod
     def _sg_enable_dhcp(sg_rules):
-        sg_rules = sorted(sg_rules)
         sg_rules.append({'protocol': 'dhcp',
                          'ethertype': 'IPv4',
                          'remote_ip_prefix': None,
@@ -1492,7 +1491,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         self._maintain_connections()
 
         arista_ports = db_lib.get_ports(context)
-        arista_port_ids = set(arista_ports.iterkeys())
+        arista_port_ids = set(six.iterkeys(arista_ports))
         sg_bindings = self._ndb.get_all_security_gp_to_port_bindings(
             context, filters={'port_id': arista_port_ids})
         neutron_sgs = self._ndb.get_security_groups(
@@ -1517,7 +1516,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         pool = Pool()
         server_by_id = self._server_by_id
 
-        for server, acls in itertools.izip(
+        for server, acls in zip(
                 six.itervalues(server_by_id),
                 pool.imap(
                     self._fetch_acls, six.itervalues(server_by_id))):

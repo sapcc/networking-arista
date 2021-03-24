@@ -1009,9 +1009,21 @@ class AristaDriver(api.MechanismDriver):
         return hostname if fqdns_used else hostname.split('.')[0]
 
     def _save_switch_configs_thread(self):
+        if not self.sync_service.is_member_id_valid():
+            LOG.info("Switch config save thread was started unnecessarily "
+                     "in this process, stopping it")
+            self._config_save_loop.stop()
+            return
+
         self.sync_service.save_switch_configs()
 
     def _synchronization_thread(self):
+        if not self.sync_service.is_member_id_valid():
+            LOG.info("Synchronization thread was started unnecessarily "
+                     "in this process, stopping it")
+            self.timer.stop()
+            return
+
         self.sync_service.do_synchronize()
 
     def stop_synchronization_thread(self):

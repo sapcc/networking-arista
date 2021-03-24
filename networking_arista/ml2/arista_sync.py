@@ -50,12 +50,20 @@ class SyncService(object):
         self._member_id = None
         self._setup_coordination()
 
+    @staticmethod
+    def gen_member_id():
+        return six.binary_type(
+            "{}({})".format(cfg.CONF.host, os.getpid()).encode('ascii'))
+
+    def is_member_id_valid(self):
+        """Check if this sync service still lives on the original process"""
+        return self._member_id == self.gen_member_id()
+
     def _setup_coordination(self):
         if not cfg.CONF.ml2_arista.coordinator_url:
             return
 
-        self._member_id = six.binary_type(
-            "{}({})".format(cfg.CONF.host, os.getpid()).encode('ascii'))
+        self._member_id = self.gen_member_id()
 
         coordinator = coordination.get_coordinator(
             cfg.CONF.ml2_arista.coordinator_url,

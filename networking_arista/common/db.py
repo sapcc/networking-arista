@@ -35,11 +35,11 @@ class AristaProvisionedNets(model_base.BASEV2, model_base.HasId,
     segmentation_id = sa.Column(sa.Integer)
 
     def eos_network_representation(self, segmentation_type):
-        return {u'networkId': self.network_id,
-                u'segmentationTypeId': self.segmentation_id,
-                u'segmentationType': segmentation_type,
-                u'tenantId': self.project_id,
-                u'segmentId': self.id,
+        return {'networkId': self.network_id,
+                'segmentationTypeId': self.segmentation_id,
+                'segmentationType': segmentation_type,
+                'tenantId': self.project_id,
+                'segmentId': self.id,
                 }
 
 
@@ -58,10 +58,10 @@ class AristaProvisionedVms(model_base.BASEV2, model_base.HasId,
     network_id = sa.Column(sa.String(UUID_LEN))
 
     def eos_port_representation(self):
-        return {u'portId': self.port_id,
-                u'deviceId': self.vm_id,
-                u'hosts': [self.host_id],
-                u'networkId': self.network_id}
+        return {'portId': self.port_id,
+                'deviceId': self.vm_id,
+                'hosts': [self.host_id],
+                'networkId': self.network_id}
 
 
 class AristaProvisionedProjects(model_base.BASEV2, model_base.HasId,
@@ -73,4 +73,4 @@ class AristaProvisionedProjects(model_base.BASEV2, model_base.HasId,
     __tablename__ = 'arista_provisioned_projects'
 
     def eos_tenant_representation(self):
-        return {u'tenantId': self.project_id}
+        return {'tenantId': self.project_id}

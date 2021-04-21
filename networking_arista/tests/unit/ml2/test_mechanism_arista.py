@@ -417,7 +417,7 @@ class AristaDriverTestCase(testlib_api.SqlTestCase):
 
         expected_calls = [
             mock.call.NeutronNets(),
-            mock.call.__nonzero__(),
+            mock.call.__bool__(),
             mock.call.is_port_provisioned(plugin_context, port_id),
             mock.call.is_network_provisioned(plugin_context,
                                              tenant_id, network_id, None),
@@ -500,7 +500,7 @@ class AristaDriverTestCase(testlib_api.SqlTestCase):
         port_id = port_context.current['id']
         plugin_context = port_context._plugin_context
         expected_calls = [
-            mock.call.__nonzero__(),
+            mock.call.__bool__(),
             mock.call.forget_port(plugin_context, port_id, port_context.host),
         ]
 
@@ -567,7 +567,7 @@ class AristaDriverTestCase(testlib_api.SqlTestCase):
         self.drv.delete_port_postcommit(port_context)
         plugin_context = port_context._plugin_context
         expected_calls = [
-            mock.call.__nonzero__(),
+            mock.call.__bool__(),
             mock.call.get_physical_network(host_id, context=port_context),
             mock.call.get_bm_ports_for_device(plugin_context, device_id),
             mock.call.get_bm_ports_for_device().__getattr__('__iter__')(),
@@ -679,7 +679,7 @@ class AristaDriverTestCase(testlib_api.SqlTestCase):
         plugin_context = port_context._plugin_context
 
         expected_calls = [
-            mock.call.__nonzero__(),
+            mock.call.__bool__(),
             mock.call.is_network_provisioned(plugin_context, tenant_id,
                                              network_id,
                                              segmentation_id,
@@ -859,7 +859,7 @@ class AristaDriverTestCase(testlib_api.SqlTestCase):
         plugin_context = port_context._plugin_context
 
         expected_calls = [
-            mock.call.__nonzero__(),
+            mock.call.__bool__(),
             mock.call.is_port_provisioned(plugin_context, port_id, None),
             mock.call.is_network_provisioned(plugin_context,
                                              tenant_id, network_id,
@@ -1075,7 +1075,7 @@ class AristaDriverTestCase(testlib_api.SqlTestCase):
                    'name': 'test-net',
                    'shared': shared}
         network_segments = [{'segmentation_id': segmentation_id,
-                             'physical_network': u'default',
+                             'physical_network': 'default',
                              'id': 'segment-id-for-%s' % segmentation_id,
                              'network_type': 'vlan'}]
         return FakeNetworkContext(tenant_id, network, network_segments,

@@ -51,6 +51,9 @@ def setup_valid_config():
     setup_arista_wrapper_config('value')
 
 
+def _dict_keys(x):
+    return sorted(x.keys())
+
 class AristaProvisionedVlansStorageTestCase(testlib_api.SqlTestCase):
     """Test storing and retrieving functionality of Arista mechanism driver.
 
@@ -235,24 +238,24 @@ class AristaProvisionedVlansStorageTestCase(testlib_api.SqlTestCase):
         db_lib.forget_port(context, port_id, host_id)
 
     def test_get_network_list_returns_eos_compatible_data(self):
-        tenant = u'test-1'
+        tenant = 'test-1'
         segm_type = 'vlan'
-        network_id = u'123'
-        network2_id = u'1234'
+        network_id = '123'
+        network2_id = '1234'
         vlan_id = 123
         vlan2_id = 1234
         segment_id1 = '11111-%s' % vlan_id
         segment_id2 = '11111-%s' % vlan2_id
-        expected_eos_net_list = {network_id: {u'networkId': network_id,
-                                              u'segmentationTypeId': vlan_id,
-                                              u'tenantId': tenant,
-                                              u'segmentId': segment_id1,
-                                              u'segmentationType': segm_type},
-                                 network2_id: {u'networkId': network2_id,
-                                               u'tenantId': tenant,
-                                               u'segmentId': segment_id2,
-                                               u'segmentationTypeId': vlan2_id,
-                                               u'segmentationType': segm_type}}
+        expected_eos_net_list = {network_id: {'networkId': network_id,
+                                              'segmentationTypeId': vlan_id,
+                                              'tenantId': tenant,
+                                              'segmentId': segment_id1,
+                                              'segmentationType': segm_type},
+                                 network2_id: {'networkId': network2_id,
+                                               'tenantId': tenant,
+                                               'segmentId': segment_id2,
+                                               'segmentationTypeId': vlan2_id,
+                                               'segmentationType': segm_type}}
 
         context = get_admin_context()
 
@@ -307,14 +310,14 @@ class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
             elif len(c) == 3:
                 url, method, data = c
                 if type(data) == list:
-                    data.sort()
+                    data.sort(key=_dict_keys)
                 expected_calls.append(mock.call(url, method, data))
             elif len(c) == 4:
                 url, method, data, clean_data = c
                 if type(data) == list:
-                    data.sort()
+                    data.sort(key=_dict_keys)
                 if type(clean_data) == list:
-                    clean_data.sort()
+                    clean_data.sort(key=_dict_keys)
                 expected_calls.append(mock.call(url, method, data, clean_data))
             else:
                 assert False, "Unrecognized call length"
@@ -323,10 +326,10 @@ class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
         for call in mock_send_api_req.mock_calls:
             if len(call.call_list()[0][1]) > 2:
                 if type(call.call_list()[0][1][2]) == list:
-                    call.call_list()[0][1][2].sort()
+                    call.call_list()[0][1][2].sort(key=_dict_keys)
             if len(call.call_list()[0][1]) > 3:
                 if type(call.call_list()[0][1][3]) == list:
-                    call.call_list()[0][1][3].sort()
+                    call.call_list()[0][1][3].sort(key=_dict_keys)
         mock_send_api_req.assert_has_calls(expected_calls, any_order=True)
 
     @patch(JSON_SEND_FUNC)
@@ -648,14 +651,14 @@ class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
              'POST', [
                  {'portId': 'port-id-2-0',
                   'switchBinding': [
-                      {'interface': u'Ethernet1', 'host': 'host_2',
-                       'segment': [], 'switch': u'switch01'}]}]),
+                      {'interface': 'Ethernet1', 'host': 'host_2',
+                       'segment': [], 'switch': 'switch01'}]}]),
             ('region/RegionOne/port/port-id-2-1/binding',
              'POST', [
                  {'portId': 'port-id-2-1',
                   'switchBinding': [
-                      {'interface': u'Ethernet1', 'host': 'host_2',
-                       'segment': [], 'switch': u'switch01'}]}]),
+                      {'interface': 'Ethernet1', 'host': 'host_2',
+                       'segment': [], 'switch': 'switch01'}]}]),
             ('region/RegionOne/port/port-id-3-0/binding',
              'POST', [
                  {'portId': 'port-id-3-0',
@@ -686,14 +689,14 @@ class TestAristaJSONRPCWrapper(testlib_api.SqlTestCase):
              'POST', [
                  {'portId': 'port-id-6-0',
                   'switchBinding': [
-                      {'interface': u'Ethernet1', 'host': 'host_6',
-                       'segment': [], 'switch': u'switch01'}]}]),
+                      {'interface': 'Ethernet1', 'host': 'host_6',
+                       'segment': [], 'switch': 'switch01'}]}]),
             ('region/RegionOne/port/port-id-6-1/binding',
              'POST', [
                  {'portId': 'port-id-6-1',
                   'switchBinding': [
-                      {'interface': u'Ethernet1', 'host': 'host_6',
-                       'segment': [], 'switch': u'switch01'}]}]),
+                      {'interface': 'Ethernet1', 'host': 'host_6',
+                       'segment': [], 'switch': 'switch01'}]}]),
 
             ('region/RegionOne/port/port-id-7-0/binding',
              'POST', [
@@ -953,7 +956,7 @@ class PositiveRPCWrapperValidConfigTestCase(testlib_api.SqlTestCase):
         calls = []
         calls.extend(
             mock.call(cmds=cmd, commands_to_log=log_cmd)
-            for cmd, log_cmd in itertools.izip(cmds, commands_to_log or cmds))
+            for cmd, log_cmd in zip(cmds, commands_to_log or cmds))
         mock_send_eapi_req.assert_has_calls(calls)
 
     def test_no_exception_on_correct_configuration(self):
@@ -2119,7 +2122,7 @@ class SyncServiceTest(testlib_api.SqlTestCase):
             mock.call.perform_sync_of_sg(self.sync_service._context),
             mock.call.check_cvx_availability(),
             mock.call.get_region_updated_time(),
-            mock.call.get_region_updated_time().__nonzero__(),
+            mock.call.get_region_updated_time().__bool__(),
             mock.call.sync_start(),
             mock.call.register_with_eos(sync=True),
             mock.call.check_supported_features(),
@@ -2156,16 +2159,16 @@ class SyncServiceTest(testlib_api.SqlTestCase):
 
         # Store two tenants in a db and none on EOS.
         # The sync should send details of all tenants to EOS
-        tenant_1_id = u'tenant-1'
-        tenant_1_net_1_id = u'ten-1-net-1'
+        tenant_1_id = 'tenant-1'
+        tenant_1_net_1_id = 'ten-1-net-1'
         tenant_1_net_1_seg_id = 11
         db_lib.remember_tenant(self.admin_ctx, tenant_1_id)
         db_lib.remember_network_segment(self.admin_ctx, tenant_1_id,
                                         tenant_1_net_1_id,
                                         tenant_1_net_1_seg_id, 'segment_id_11')
 
-        tenant_2_id = u'tenant-2'
-        tenant_2_net_1_id = u'ten-2-net-1'
+        tenant_2_id = 'tenant-2'
+        tenant_2_net_1_id = 'ten-2-net-1'
         tenant_2_net_1_seg_id = 21
         db_lib.remember_tenant(self.admin_ctx, tenant_2_id)
         db_lib.remember_network_segment(self.admin_ctx, tenant_2_id,
@@ -2187,7 +2190,7 @@ class SyncServiceTest(testlib_api.SqlTestCase):
             mock.call.perform_sync_of_sg(self.sync_service._context),
             mock.call.check_cvx_availability(),
             mock.call.get_region_updated_time(),
-            mock.call.get_region_updated_time().__nonzero__(),
+            mock.call.get_region_updated_time().__bool__(),
             mock.call.sync_start(),
             mock.call.register_with_eos(sync=True),
             mock.call.check_supported_features(),

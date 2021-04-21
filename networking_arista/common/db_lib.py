@@ -343,9 +343,9 @@ def get_vms(context, project_id):
     vm_dict = dict()
 
     def eos_vm_representation(port):
-        return {u'vmId': port['deviceId'],
-                u'baremetal_instance': False,
-                u'ports': [port]}
+        return {'vmId': port['deviceId'],
+                'baremetal_instance': False,
+                'ports': [port]}
 
     for port in ports.values():
         deviceId = port['deviceId']

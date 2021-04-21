@@ -14,7 +14,6 @@
 
 import collections
 import inspect
-import itertools
 import json
 import math
 import re
@@ -25,7 +24,7 @@ import socket
 from copy import copy
 from eventlet.greenpool import GreenPool as Pool
 from hashlib import sha1
-from httplib import HTTPException
+from http.client import HTTPException
 from six.moves.urllib.parse import urlparse
 
 from netaddr import AddrFormatError
@@ -1113,7 +1112,6 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
 
     @staticmethod
     def _sg_enable_dhcp(sg_rules):
-        sg_rules = sorted(sg_rules)
         sg_rules.append({'protocol': 'dhcp',
                          'ethertype': 'IPv4',
                          'remote_ip_prefix': None,
@@ -1145,11 +1143,9 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         for new_acl in new_acls:
             # find all acls in existing set
             new_acl_without_hostbits = self._clear_hostbits_from_acl(new_acl)
-            acls = list(filter(
-                lambda x: (x['text'] == new_acl or
-                           x['text'] == new_acl_without_hostbits or
-                           self._conv_acl(x) == new_acl),
-                existing_acls))
+            acls = [x for x in existing_acls if (x['text'] == new_acl or
+                    x['text'] == new_acl_without_hostbits or
+                    self._conv_acl(x) == new_acl)]
 
             # new rule? add to doff
             if not acls:
@@ -1492,7 +1488,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         self._maintain_connections()
 
         arista_ports = db_lib.get_ports(context)
-        arista_port_ids = set(arista_ports.iterkeys())
+        arista_port_ids = set(arista_ports.keys())
         sg_bindings = self._ndb.get_all_security_gp_to_port_bindings(
             context, filters={'port_id': arista_port_ids})
         neutron_sgs = self._ndb.get_security_groups(
@@ -1517,7 +1513,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         pool = Pool()
         server_by_id = self._server_by_id
 
-        for server, acls in itertools.izip(
+        for server, acls in zip(
                 six.itervalues(server_by_id),
                 pool.imap(
                     self._fetch_acls, six.itervalues(server_by_id))):
@@ -1602,7 +1598,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         # Get the port-channel memberships
         try:
             for k, pc in six.iteritems(self._get_interface_membership(
-                    server, port_security_groups.keys())):
+                    server, list(port_security_groups.keys()))):
                 if pc not in port_security_groups:
                     port_security_groups[pc] = port_security_groups[k]
         except Exception:

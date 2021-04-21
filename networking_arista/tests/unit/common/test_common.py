@@ -27,44 +27,44 @@ class TestNetworkingCommonOptimizeSecurityGroupRules(base.TestCase):
         self.assertEqual(res, [])
 
     def test_combine_adjacent_port_ranges_negative(self):
-        input = [{'direction': 'ingress', 'protocol': u'tcp',
+        input = [{'direction': 'ingress', 'protocol': 'tcp',
                   'port_range_max': 55,
                   'remote_group_id': GROUP_ID,
                   'remote_ip_prefix': None,
-                  'port_range_min': 52, 'ethertype': u'IPv4'},
-                 {'direction': 'ingress', 'protocol': u'tcp',
+                  'port_range_min': 52, 'ethertype': 'IPv4'},
+                 {'direction': 'ingress', 'protocol': 'tcp',
                   'port_range_max': 56,
                   'remote_group_id': GROUP_ID_OTHER,
                   'remote_ip_prefix': None,
-                  'port_range_min': 55, 'ethertype': u'IPv4'},
+                  'port_range_min': 55, 'ethertype': 'IPv4'},
                  ]
-        output = [{'direction': 'ingress', 'protocol': u'tcp',
+        output = [{'direction': 'ingress', 'protocol': 'tcp',
                    'port_range_max': 56,
                    'remote_group_id': GROUP_ID,
                    'remote_ip_prefix': None,
-                   'port_range_min': 52, 'ethertype': u'IPv4'},
+                   'port_range_min': 52, 'ethertype': 'IPv4'},
                   ]
 
         res = optimize_security_group_rules(input)
-        self.failIfEqual(sorted(res), sorted(output))
+        self.assertNotEqual(res, output)
 
     def test_combine_adjacent_port_ranges(self):
-        input = [{'direction': 'ingress', 'protocol': u'tcp',
+        input = [{'direction': 'ingress', 'protocol': 'tcp',
                   'port_range_max': 54,
                   'remote_group_id': GROUP_ID,
                   'remote_ip_prefix': None,
-                  'port_range_min': 52, 'ethertype': u'IPv4'},
-                 {'direction': 'ingress', 'protocol': u'tcp',
+                  'port_range_min': 52, 'ethertype': 'IPv4'},
+                 {'direction': 'ingress', 'protocol': 'tcp',
                   'port_range_max': 56,
                   'remote_group_id': GROUP_ID,
                   'remote_ip_prefix': None,
-                  'port_range_min': 55, 'ethertype': u'IPv4'},
+                  'port_range_min': 55, 'ethertype': 'IPv4'},
                  ]
-        output = [{'direction': 'ingress', 'protocol': u'tcp',
+        output = [{'direction': 'ingress', 'protocol': 'tcp',
                    'port_range_max': 56,
                    'remote_group_id': GROUP_ID,
                    'remote_ip_prefix': None,
-                   'port_range_min': 52, 'ethertype': u'IPv4'},
+                   'port_range_min': 52, 'ethertype': 'IPv4'},
                   ]
 
         res = optimize_security_group_rules(input)
@@ -74,22 +74,22 @@ class TestNetworkingCommonOptimizeSecurityGroupRules(base.TestCase):
         self.assertItemsEqual(res, output)
 
     def test_combine_any_port_range(self):
-        input = [{'direction': 'ingress', 'protocol': u'tcp',
+        input = [{'direction': 'ingress', 'protocol': 'tcp',
                   'port_range_max': None,
                   'remote_group_id': GROUP_ID,
                   'remote_ip_prefix': None,
-                  'port_range_min': None, 'ethertype': u'IPv4'},
-                 {'direction': 'ingress', 'protocol': u'tcp',
+                  'port_range_min': None, 'ethertype': 'IPv4'},
+                 {'direction': 'ingress', 'protocol': 'tcp',
                   'port_range_max': 56,
                   'remote_group_id': GROUP_ID,
                   'remote_ip_prefix': None,
-                  'port_range_min': 55, 'ethertype': u'IPv4'},
+                  'port_range_min': 55, 'ethertype': 'IPv4'},
                  ]
-        output = [{'direction': 'ingress', 'protocol': u'tcp',
+        output = [{'direction': 'ingress', 'protocol': 'tcp',
                    'port_range_max': None,
                    'remote_group_id': GROUP_ID,
                    'remote_ip_prefix': None,
-                   'port_range_min': None, 'ethertype': u'IPv4'},
+                   'port_range_min': None, 'ethertype': 'IPv4'},
                   ]
 
         res = optimize_security_group_rules(input)
@@ -100,27 +100,27 @@ class TestNetworkingCommonOptimizeSecurityGroupRules(base.TestCase):
 
     def test_combine_subnets_failure(self):
         # We cannot merge adjacent subnets, if the ports differ
-        input = [{'direction': 'ingress', 'protocol': u'tcp',
+        input = [{'direction': 'ingress', 'protocol': 'tcp',
                   'port_range_max': None,
                   'remote_group_id': None,
                   'remote_ip_prefix': '192.0.2.0/25',
-                  'port_range_min': None, 'ethertype': u'IPv4'},
-                 {'direction': 'ingress', 'protocol': u'tcp',
+                  'port_range_min': None, 'ethertype': 'IPv4'},
+                 {'direction': 'ingress', 'protocol': 'tcp',
                   'port_range_max': 56,
                   'remote_group_id': None,
                   'remote_ip_prefix': '192.0.2.128/25',
-                  'port_range_min': 55, 'ethertype': u'IPv4'},
+                  'port_range_min': 55, 'ethertype': 'IPv4'},
                  ]
-        output = [{'direction': 'ingress', 'protocol': u'tcp',
+        output = [{'direction': 'ingress', 'protocol': 'tcp',
                    'port_range_max': None,
                    'remote_group_id': None,
                    'remote_ip_prefix': '192.0.2.0/25',
-                   'port_range_min': None, 'ethertype': u'IPv4'},
-                  {'direction': 'ingress', 'protocol': u'tcp',
+                   'port_range_min': None, 'ethertype': 'IPv4'},
+                  {'direction': 'ingress', 'protocol': 'tcp',
                    'port_range_max': 56,
                    'remote_group_id': None,
                    'remote_ip_prefix': '192.0.2.128/25',
-                   'port_range_min': 55, 'ethertype': u'IPv4'},
+                   'port_range_min': 55, 'ethertype': 'IPv4'},
                   ]
 
         res = optimize_security_group_rules(input)
@@ -131,22 +131,22 @@ class TestNetworkingCommonOptimizeSecurityGroupRules(base.TestCase):
 
     def test_combine_adjacent_subnets(self):
         # We can merge adjacent subnets, if the ports are the same
-        input = [{'direction': 'ingress', 'protocol': u'tcp',
+        input = [{'direction': 'ingress', 'protocol': 'tcp',
                   'port_range_max': 56,
                   'remote_group_id': None,
                   'remote_ip_prefix': '192.0.2.0/25',
-                  'port_range_min': 55, 'ethertype': u'IPv4'},
-                 {'direction': 'ingress', 'protocol': u'tcp',
+                  'port_range_min': 55, 'ethertype': 'IPv4'},
+                 {'direction': 'ingress', 'protocol': 'tcp',
                   'port_range_max': 56,
                   'remote_group_id': None,
                   'remote_ip_prefix': '192.0.2.128/25',
-                  'port_range_min': 55, 'ethertype': u'IPv4'},
+                  'port_range_min': 55, 'ethertype': 'IPv4'},
                  ]
-        output = [{'direction': 'ingress', 'protocol': u'tcp',
+        output = [{'direction': 'ingress', 'protocol': 'tcp',
                    'port_range_max': 56,
                    'remote_group_id': None,
                    'remote_ip_prefix': '192.0.2.0/24',
-                   'port_range_min': 55, 'ethertype': u'IPv4'},
+                   'port_range_min': 55, 'ethertype': 'IPv4'},
                   ]
 
         res = optimize_security_group_rules(input)
@@ -158,22 +158,22 @@ class TestNetworkingCommonOptimizeSecurityGroupRules(base.TestCase):
     def test_combine_containing_subnets(self):
         # We can merge adjacent subnets, one is a subset of the other
         # in both ports and subnet
-        input = [{'direction': 'ingress', 'protocol': u'tcp',
+        input = [{'direction': 'ingress', 'protocol': 'tcp',
                   'port_range_max': None,
                   'remote_group_id': None,
                   'remote_ip_prefix': '192.0.2.0/24',
-                  'port_range_min': None, 'ethertype': u'IPv4'},
-                 {'direction': 'ingress', 'protocol': u'tcp',
+                  'port_range_min': None, 'ethertype': 'IPv4'},
+                 {'direction': 'ingress', 'protocol': 'tcp',
                   'port_range_max': 56,
                   'remote_group_id': None,
                   'remote_ip_prefix': '192.0.2.0/25',
-                  'port_range_min': 55, 'ethertype': u'IPv4'},
+                  'port_range_min': 55, 'ethertype': 'IPv4'},
                  ]
-        output = [{'direction': 'ingress', 'protocol': u'tcp',
+        output = [{'direction': 'ingress', 'protocol': 'tcp',
                    'port_range_max': None,
                    'remote_group_id': None,
                    'remote_ip_prefix': '192.0.2.0/24',
-                   'port_range_min': None, 'ethertype': u'IPv4'},
+                   'port_range_min': None, 'ethertype': 'IPv4'},
                   ]
 
         res = optimize_security_group_rules(input)
@@ -185,22 +185,22 @@ class TestNetworkingCommonOptimizeSecurityGroupRules(base.TestCase):
     def test_combine_containing_groups_ipv4(self):
         # We can merge adjacent subnets, one is a subset of the other
         # in both ports and subnet
-        input = [{'direction': 'ingress', 'protocol': u'tcp',
+        input = [{'direction': 'ingress', 'protocol': 'tcp',
                   'port_range_max': None,
                   'remote_group_id': None,
                   'remote_ip_prefix': '0.0.0.0/0',
-                  'port_range_min': None, 'ethertype': u'IPv4'},
-                 {'direction': 'ingress', 'protocol': u'tcp',
+                  'port_range_min': None, 'ethertype': 'IPv4'},
+                 {'direction': 'ingress', 'protocol': 'tcp',
                   'port_range_max': 56,
                   'remote_group_id': GROUP_ID_OTHER,
                   'remote_ip_prefix': None,
-                  'port_range_min': 55, 'ethertype': u'IPv4'},
+                  'port_range_min': 55, 'ethertype': 'IPv4'},
                  ]
-        output = [{'direction': 'ingress', 'protocol': u'tcp',
+        output = [{'direction': 'ingress', 'protocol': 'tcp',
                    'port_range_max': None,
                    'remote_group_id': None,
                    'remote_ip_prefix': '0.0.0.0/0',
-                   'port_range_min': None, 'ethertype': u'IPv4'},
+                   'port_range_min': None, 'ethertype': 'IPv4'},
                   ]
 
         res = optimize_security_group_rules(input)
@@ -212,22 +212,22 @@ class TestNetworkingCommonOptimizeSecurityGroupRules(base.TestCase):
     def test_combine_containing_groups_ipv6(self):
         # We can merge adjacent subnets, one is a subset of the other
         # in both ports and subnet
-        input = [{'direction': 'ingress', 'protocol': u'tcp',
+        input = [{'direction': 'ingress', 'protocol': 'tcp',
                   'port_range_max': None,
                   'remote_group_id': None,
                   'remote_ip_prefix': '::/0',
-                  'port_range_min': None, 'ethertype': u'IPv6'},
-                 {'direction': 'ingress', 'protocol': u'tcp',
+                  'port_range_min': None, 'ethertype': 'IPv6'},
+                 {'direction': 'ingress', 'protocol': 'tcp',
                   'port_range_max': 56,
                   'remote_group_id': GROUP_ID_OTHER,
                   'remote_ip_prefix': None,
-                  'port_range_min': 55, 'ethertype': u'IPv6'},
+                  'port_range_min': 55, 'ethertype': 'IPv6'},
                  ]
-        output = [{'direction': 'ingress', 'protocol': u'tcp',
+        output = [{'direction': 'ingress', 'protocol': 'tcp',
                    'port_range_max': None,
                    'remote_group_id': None,
                    'remote_ip_prefix': '::/0',
-                   'port_range_min': None, 'ethertype': u'IPv6'},
+                   'port_range_min': None, 'ethertype': 'IPv6'},
                   ]
 
         res = optimize_security_group_rules(input)
@@ -239,22 +239,22 @@ class TestNetworkingCommonOptimizeSecurityGroupRules(base.TestCase):
     def test_combine_containing_subnets_icmp(self):
         # We can merge adjacent subnets, one is a subset of the other
         # in both ports and subnet
-        input = [{'direction': 'ingress', 'protocol': u'icmp',
+        input = [{'direction': 'ingress', 'protocol': 'icmp',
                   'port_range_max': None,
                   'remote_group_id': None,
                   'remote_ip_prefix': '192.0.2.0/24',
-                  'port_range_min': None, 'ethertype': u'IPv4'},
-                 {'direction': 'ingress', 'protocol': u'icmp',
+                  'port_range_min': None, 'ethertype': 'IPv4'},
+                 {'direction': 'ingress', 'protocol': 'icmp',
                   'port_range_max': 56,
                   'remote_group_id': None,
                   'remote_ip_prefix': '192.0.2.0/25',
-                  'port_range_min': 55, 'ethertype': u'IPv4'},
+                  'port_range_min': 55, 'ethertype': 'IPv4'},
                  ]
-        output = [{'direction': 'ingress', 'protocol': u'icmp',
+        output = [{'direction': 'ingress', 'protocol': 'icmp',
                    'port_range_max': None,
                    'remote_group_id': None,
                    'remote_ip_prefix': '192.0.2.0/24',
-                   'port_range_min': None, 'ethertype': u'IPv4'},
+                   'port_range_min': None, 'ethertype': 'IPv4'},
                   ]
 
         res = optimize_security_group_rules(input)
@@ -266,29 +266,29 @@ class TestNetworkingCommonOptimizeSecurityGroupRules(base.TestCase):
     def test_combine_containing_subnets_icmp_fail(self):
         # We can merge adjacent subnets, one is a subset of the other
         # in both ports and subnet
-        input = [{'direction': 'ingress', 'protocol': u'icmp',
+        input = [{'direction': 'ingress', 'protocol': 'icmp',
                   'port_range_max': 1,
                   'remote_group_id': None,
                   'remote_ip_prefix': '192.0.2.0/24',
-                  'port_range_min': None, 'ethertype': u'IPv4'},
-                 {'direction': 'ingress', 'protocol': u'icmp',
+                  'port_range_min': None, 'ethertype': 'IPv4'},
+                 {'direction': 'ingress', 'protocol': 'icmp',
                   'port_range_max': 5,
                   'remote_group_id': None,
                   'remote_ip_prefix': '192.0.2.0/25',
-                  'port_range_min': 1, 'ethertype': u'IPv4'},
+                  'port_range_min': 1, 'ethertype': 'IPv4'},
                  ]
-        output = [{'direction': 'ingress', 'protocol': u'icmp',
+        output = [{'direction': 'ingress', 'protocol': 'icmp',
                    'port_range_max': None,
                    'remote_group_id': None,
                    'remote_ip_prefix': '192.0.2.0/24',
-                   'port_range_min': None, 'ethertype': u'IPv4'},
+                   'port_range_min': None, 'ethertype': 'IPv4'},
                   ]
 
         res = optimize_security_group_rules(input)
-        self.failIf(res == output)
+        self.assertFalse(res == output)
 
         res = optimize_security_group_rules(reversed(input))
-        self.failIf(res == output)
+        self.assertFalse(res == output)
 
     @staticmethod
     def _create_sg_rule(protocol='tcp', remote_ip_prefix=None):
@@ -297,7 +297,7 @@ class TestNetworkingCommonOptimizeSecurityGroupRules(base.TestCase):
             'port_range_max': None,
             'remote_group_id': None,
             'remote_ip_prefix': remote_ip_prefix,
-            'port_range_min': None, 'ethertype': u'IPv4'}
+            'port_range_min': None, 'ethertype': 'IPv4'}
 
     def test_performance(self):
         num_c_class = 8

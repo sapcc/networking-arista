@@ -472,7 +472,7 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
 
     def test_icmp(self):
         def _get_sg(from_port, to_port):
-            return {'id': u'test_icmp_sg',
+            return {'id': 'test_icmp_sg',
                     'tenant_id': '123456789',
                     'security_group_rules': [
                         self._get_sg_rule('icmp', 'any', from_port, to_port)

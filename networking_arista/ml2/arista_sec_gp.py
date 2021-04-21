@@ -1085,7 +1085,8 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
                     min_prefixlen
                 )
 
-                if min_distance is None or min_distance < min_distance_1:
+                if min_distance is None or min_distance_1 is not None and \
+                        min_distance < min_distance_1:
                     min_distance = min_distance_1
 
             num_rules = len(

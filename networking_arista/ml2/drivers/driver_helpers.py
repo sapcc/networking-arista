@@ -13,7 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.db import api as db_api
+from neutron_lib.db import api as db_api
 from neutron.plugins.ml2.drivers import type_vlan
 from oslo_log import log
 from six import moves

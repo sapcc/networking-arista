@@ -18,7 +18,7 @@ import json
 import socket
 
 import mock
-import neutron.db.api as db
+import neutron_lib.db.api as db
 
 from mock import patch
 from neutron.tests import base

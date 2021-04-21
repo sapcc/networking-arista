@@ -21,7 +21,7 @@ from oslo_config import cfg
 from oslo_log import log as logging
 import six
 
-from neutron.db import api as db_api
+from neutron_lib.db import api as db_api
 from neutron.db.models.plugins.ml2.vlanallocation import VlanAllocation
 
 from networking_arista._i18n import _, _LW

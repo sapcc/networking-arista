@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from neutron.db import api as db_api
+from neutron_lib.db import api as db_api
 from neutron.db import db_base_plugin_v2
 from neutron.db.models import allowed_address_pair as aap_models
 from neutron.db.models import securitygroup as sg_models

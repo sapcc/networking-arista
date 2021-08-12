@@ -1439,7 +1439,7 @@ class AristaSecGroupSwitchDriver(AristaSwitchRPCMixin):
         else:
             s = sha1()
             for n in sorted(name):
-                s.update(n)
+                s.update(n.encode())
             return s.hexdigest()
 
     @staticmethod

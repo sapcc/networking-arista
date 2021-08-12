@@ -1109,3 +1109,12 @@ class AristaSecGroupSwitchDriverTest(testlib_api.SqlTestCase):
 
         ifs = self.drv._get_mlag_pc_members_from_iface(server, "Ethernet19/3")
         self.assertEqual(expected, set(ifs))
+
+    def test_security_group_naming(self):
+        names = [
+            "af7c4ba1-3bbb-465f-845d-40ce0004064c",
+            "6baa1ff1-1f59-43cf-971e-95bcb93c15d0"
+        ]
+        expected = "a8cc23faa69ed81bb9734b681dd0052a4d440ef7"
+        result = self.drv._security_group_name(names)
+        self.assertEqual(expected, result)

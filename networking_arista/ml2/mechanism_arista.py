@@ -28,6 +28,7 @@ from neutron_lib.api.definitions import portbindings
 from neutron_lib import constants as n_const
 from neutron_lib import constants as p_const
 from neutron_lib.context import get_admin_context
+from neutron_lib.db import api as db_api
 from neutron_lib.plugins.ml2 import api
 from oslo_config import cfg
 from oslo_log import log as logging
@@ -1032,6 +1033,7 @@ class AristaDriver(api.MechanismDriver):
             self.timer = None
 
     # @enginefacade.writer
+    @db_api.retry_db_errors
     def _cleanup_db(self, context):
         """Clean up any unnecessary entries in our DB."""
         session = context.session

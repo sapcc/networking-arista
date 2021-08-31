@@ -18,6 +18,8 @@ if not os.environ.get('DISABLE_EVENTLET_PATCHING'):
     import eventlet
 
     eventlet.monkey_patch()
+import random
+from eventlet import greenthread
 
 from neutron.common import config as common_config
 
@@ -104,7 +106,7 @@ class AristaDriver(api.MechanismDriver):
             self.rpc.check_supported_features()
 
         context = get_admin_context()
-        self._cleanup_db(context)
+        greenthread.spawn_after(random.randint(0, 10), self._cleanup_db, context)
         # Registering with EOS updates self.rpc.region_updated_time. Clear it
         # to force an initial sync
         self.rpc.clear_region_updated_time()

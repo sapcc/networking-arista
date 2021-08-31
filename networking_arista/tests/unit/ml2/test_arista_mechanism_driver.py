@@ -17,6 +17,7 @@ import itertools
 import json
 import socket
 
+import eventlet
 import mock
 import neutron_lib.db.api as db
 
@@ -1803,8 +1804,9 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
         db_lib.remember_network_segment(context, 't3', 'n3', 30,
                                         'segment_id_30')
 
-        # Initialize the driver which should clean up the extra networks
+        # Initialize the driver which should clean up the extra networks, which should be done after 10 secs
         self.drv.initialize()
+        eventlet.sleep(10)
 
         adb_networks = db_lib.get_networks(context, project_id='any')
 

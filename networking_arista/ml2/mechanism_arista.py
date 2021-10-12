@@ -1032,7 +1032,6 @@ class AristaDriver(api.MechanismDriver):
             self.timer.stop()
             self.timer = None
 
-    # @enginefacade.writer
     @db_api.retry_db_errors
     def _cleanup_db(self, context):
         """Clean up any unnecessary entries in our DB."""
@@ -1041,18 +1040,21 @@ class AristaDriver(api.MechanismDriver):
             arista_vms = db.AristaProvisionedVms
             arista_nets = db.AristaProvisionedNets
 
-            missing_nets = \
-                session.query(arista_nets.network_id). \
-                outerjoin(models_v2.Network,
-                          models_v2.Network.id == arista_nets.network_id
-                          ).filter(
-                    models_v2.Network.id.is_(None)
-                ).subquery()
-
+            # DELETE FROM arista_provisioned_vms
+            # WHERE arista_provisioned_vms.port_id NOT IN (
+            #     SELECT ports.id FROM ports)
+            all_ports = session.query(models_v2.Port.id)
             session.query(arista_vms). \
-                filter(arista_vms.network_id.in_(missing_nets)).delete(False)
+                filter(arista_vms.port_id.notin_(all_ports.subquery())). \
+                delete(synchronize_session=False)
+
+            # DELETE FROM arista_provisioned_nets
+            # WHERE arista_provisioned_nets.network_id NOT IN (
+            #     SELECT networks.id FROM networks)
+            all_networks = session.query(models_v2.Network.id)
             session.query(arista_nets). \
-                filter(arista_nets.network_id.in_(missing_nets)).delete(False)
+                filter(arista_nets.network_id.notin_(all_networks.subquery())). \
+                delete(synchronize_session=False)
 
     def _network_provisioned(self, context, tenant_id, network_id,
                              segmentation_id=None, segment_id=None):

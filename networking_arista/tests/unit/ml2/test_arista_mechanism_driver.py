@@ -1803,14 +1803,38 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
         db_lib.remember_network_segment(context, 't3', 'n3', 30,
                                         'segment_id_30')
 
+        ndb.ipam = mock.Mock()
+
+        # Create some ports in neutron db
+        p1_context = self._get_port_context('p1', 't1', 'n1', 'vm1', n1_context, context=context)
+        with n1_context.session.begin():
+            ndb.create_port(n1_context, {'port': p1_context.current})
+        p2_context = self._get_port_context('p2', 't2', 'n2', 'vm2', n2_context, context=context)
+        with n2_context.session.begin():
+            ndb.create_port(n2_context, {'port': p2_context.current})
+        p3_context = self._get_port_context('p3', 't3', 'ha-network', 'vm3', n3_context, context=context)
+        with n3_context.session.begin():
+            ndb.create_port(n3_context, {'port': p3_context.current})
+
+        # Create some vms in Arista db
+        db_lib.remember_vm(context, 'vm1', 'h1', 'p1', 'n1', 't1')
+        db_lib.remember_vm(context, 'vm2', 'h2', 'p2', 'n2', 't2')
+        db_lib.remember_vm(context, 'vm3', 'h3', 'p3', 'n3', 't3')
+        db_lib.remember_vm(context, 'vm4', 'h4', 'p4', 'n2', 'admin')
+
         # Initialize the driver which should clean up the extra networks
         self.drv.initialize()
 
         adb_networks = db_lib.get_networks(context, project_id='any')
+        adb_ports = db_lib.get_ports(context)
 
         # 'n3' should now be deleted from the Arista DB
         self.assertEqual(set(('n1', 'n2', 'ha-network')),
                          set(adb_networks.keys()))
+        # 'p4' should now be deleted from the Arista DB
+        self.assertEqual(set(('p1', 'p2', 'p3')),
+                         set(adb_ports.keys()))
+
 
     def _get_network_context(self, tenant_id, net_id, seg_id, context=None):
         network = {'id': net_id,
@@ -1825,7 +1849,7 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
         return FakeNetworkContext(network, network_segments, network, context)
 
     def _get_port_context(self, port_id, tenant_id, net_id, vm_id, network,
-                          context=None):
+                          context=None, fixed_ips=[]):
         port = {'device_id': vm_id,
                 'device_owner': 'compute',
                 'binding:host_id': 'ubuntu1',
@@ -1835,6 +1859,8 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
                 'network_id': net_id,
                 'name': '',
                 'status': 'ACTIVE',
+                'admin_state_up': True,
+                'fixed_ips': fixed_ips,
                 }
         binding_levels = []
         for level, segment in enumerate(network.network_segments):
@@ -1872,6 +1898,9 @@ class FakeNetworkContext(object):
     def network_segments(self):
         return self._segments
 
+    @property
+    def is_advsvc(self):
+        return True
 
 class FakePluginContext(object):
     """Plugin context for testing purposes only."""

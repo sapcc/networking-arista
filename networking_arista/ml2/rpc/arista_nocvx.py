@@ -47,6 +47,11 @@ class AristaRPCWrapperNoCvx(AristaRPCWrapperBase,
     def check_cvx_availability(self):
         return True
 
+    def _validate_config(self):
+        # Override config validation method from AristaRPCWrapperBase
+        # it only validates eapi variables not used by this class
+        pass
+
     def plug_port_into_network(self, device_id, host_id, neutron_port_id,
                                net_id, tenant_id, port_name, device_owner,
                                sg, orig_sg, vnic_type, segments=None,

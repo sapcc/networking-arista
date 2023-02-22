@@ -237,18 +237,17 @@ class AristaDriverTestCase(testlib_api.SqlTestCase):
         mechanism_arista.db_lib.num_vms_provisioned.return_value = 0
         mechanism_arista.db_lib.are_ports_attached_to_network.return_value = (
             True)
-        try:
-            self.drv.delete_network_precommit(network_context)
-        except Exception:
-            # exception is expeted in this case - as network is not
-            # deleted in this case and exception is raised
-            pass
+        self.drv.delete_network_precommit(network_context)
 
         expected_calls = [
             mock.call.is_network_provisioned(network_context._plugin_context,
                                              tenant_id, network_id),
             mock.call.are_ports_attached_to_network(
                 network_context._plugin_context, network_id),
+            mock.call.forget_all_ports_for_network(
+                network_context._plugin_context, network_id),
+            mock.call.forget_network_segment(network_context._plugin_context,
+                                             tenant_id, network_id),
         ]
 
         mechanism_arista.db_lib.assert_has_calls(expected_calls)

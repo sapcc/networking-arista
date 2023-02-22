@@ -220,13 +220,12 @@ class AristaDriver(api.MechanismDriver):
                                          network_id):
             if db_lib.are_ports_attached_to_network(plugin_context,
                                                     network_id):
-                LOG.info(_LI('Network %s can not be deleted as it '
-                             'has ports attached to it'), network_id)
-                raise ml2_exc.MechanismDriverError(
-                    method='delete_network_precommit')
-            else:
-                db_lib.forget_network_segment(plugin_context,
-                                              tenant_id, network_id)
+                LOG.info('Network %s has ports attached to it, so we now show '
+                         'that we don\'t care about this and clean the '
+                         'database', network_id)
+                db_lib.forget_all_ports_for_network(plugin_context, network_id)
+            db_lib.forget_network_segment(plugin_context,
+                                          tenant_id, network_id)
 
     def delete_network_postcommit(self, context):
         """Send network delete request to Arista HW."""

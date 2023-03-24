@@ -69,7 +69,7 @@ class AristaRPCWrapperNoCvx(AristaRPCWrapperBase,
             server = self._get_server(switch_info=binding['switch_info'],
                                       switch_id=binding['switch_id'])
             if server is None:
-                LOG.warning("Unknown server for port-binding %s", binding)
+                LOG.error("Unknown server for port-binding %s", binding)
                 continue
 
             port_id = binding['port_id']

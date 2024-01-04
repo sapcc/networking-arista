@@ -13,12 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from datetime import datetime
 import os
 import six
 
 from neutron_lib import context as neutron_context
 from oslo_config import cfg
 from oslo_log import log as logging
+import psutil
 from tooz import coordination
 
 from networking_arista._i18n import _
@@ -52,8 +54,10 @@ class SyncService(object):
 
     @staticmethod
     def gen_member_id():
-        return six.binary_type(
-            "{}({})".format(cfg.CONF.host, os.getpid()).encode('ascii'))
+        start_time = psutil.Process(os.getpid()).create_time()
+        start_time = datetime.utcfromtimestamp(start_time).isoformat()
+        member_id = f'{cfg.CONF.host}-({os.getpid()})-{start_time}'
+        return six.binary_type(member_id.encode('ascii'))
 
     def is_member_id_valid(self):
         """Check if this sync service still lives on the original process"""

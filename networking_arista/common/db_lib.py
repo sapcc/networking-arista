@@ -31,6 +31,7 @@ from networking_arista.common import db as db_models
 VLAN_SEGMENTATION = 'vlan'
 
 
+@db_api.CONTEXT_WRITER
 def remember_tenant(context, project_id):
     """Stores a tenant information in repository.
 
@@ -38,15 +39,14 @@ def remember_tenant(context, project_id):
     :param project_id: globally unique project identifier
     """
     session = context.session
-    with session.begin(subtransactions=True):
-        # Tenant might not be unique, but then we just have duplicates in the
-        # "set".
-        project = (session.query(db_models.AristaProvisionedProjects).
-                   filter_by(project_id=project_id).first())
-        if not project:
-            project = db_models.AristaProvisionedProjects(
-                                            project_id=project_id)
-            session.add(project)
+    # Tenant might not be unique, but then we just have duplicates in the
+    # "set".
+    project = (session.query(db_models.AristaProvisionedProjects).
+               filter_by(project_id=project_id).first())
+    if not project:
+        project = db_models.AristaProvisionedProjects(
+                                        project_id=project_id)
+        session.add(project)
 
 
 def forget_tenant(context, project_id):
@@ -77,6 +77,7 @@ def num_provisioned_tenants(context):
     return get_all_tenants(context).count()
 
 
+@db_api.CONTEXT_WRITER
 def remember_vm(context, vm_id, host_id, port_id, network_id, project_id):
     """Stores all relevant information about a VM in repository.
 
@@ -88,16 +89,16 @@ def remember_vm(context, vm_id, host_id, port_id, network_id, project_id):
     :param project_id: globally unique neutron tenant identifier
     """
     session = context.session
-    with session.begin(subtransactions=True):
-        vm = db_models.AristaProvisionedVms(
-            vm_id=vm_id,
-            host_id=host_id,
-            port_id=port_id,
-            network_id=network_id,
-            project_id=project_id)
-        session.add(vm)
+    vm = db_models.AristaProvisionedVms(
+        vm_id=vm_id,
+        host_id=host_id,
+        port_id=port_id,
+        network_id=network_id,
+        project_id=project_id)
+    session.add(vm)
 
 
+@db_api.CONTEXT_WRITER
 def forget_all_ports_for_network(context, net_id):
     """Removes all ports for a given network from repository.
 
@@ -107,6 +108,7 @@ def forget_all_ports_for_network(context, net_id):
         filter_by(network_id=net_id).delete()
 
 
+@db_api.CONTEXT_WRITER
 def update_port(context, vm_id, host_id, port_id, network_id, project_id):
     """Updates the port details in the database.
 
@@ -127,6 +129,7 @@ def update_port(context, vm_id, host_id, port_id, network_id, project_id):
         port.project_id = project_id
 
 
+@db_api.CONTEXT_WRITER
 def forget_port(context, port_id, host_id):
     """Deletes the port from the database
 
@@ -138,6 +141,7 @@ def forget_port(context, port_id, host_id):
         host_id=host_id).delete()
 
 
+@db_api.CONTEXT_WRITER
 def remember_network_segment(context, project_id,
                              network_id, segmentation_id, segment_id):
     """Stores all relevant information about a Network in repository.
@@ -148,15 +152,15 @@ def remember_network_segment(context, project_id,
     :param segment_id: globally unique neutron network segment identifier
     """
     session = context.session
-    with session.begin(subtransactions=True):
-        net = db_models.AristaProvisionedNets(
-            project_id=project_id,
-            id=segment_id,
-            network_id=network_id,
-            segmentation_id=segmentation_id)
-        session.add(net)
+    net = db_models.AristaProvisionedNets(
+        project_id=project_id,
+        id=segment_id,
+        network_id=network_id,
+        segmentation_id=segmentation_id)
+    session.add(net)
 
 
+@db_api.CONTEXT_WRITER
 def forget_network_segment(context, project_id, network_id, segment_id=None):
     """Deletes all relevant information about a Network from repository.
 
@@ -175,6 +179,7 @@ def forget_network_segment(context, project_id, network_id, segment_id=None):
         filter_by(**filters).delete()
 
 
+@db_api.CONTEXT_READER
 def get_segmentation_id(context, project_id, network_id):
     """Returns Segmentation ID (VLAN) associated with a network.
 
@@ -187,6 +192,7 @@ def get_segmentation_id(context, project_id, network_id):
                   network_id=network_id).first()
 
 
+@db_api.CONTEXT_READER
 def get_segmentation_id_by_segment_id(context, segment_id):
     """Returns Segmentation ID (VLAN) associated with a segment.
 
@@ -198,6 +204,7 @@ def get_segmentation_id_by_segment_id(context, segment_id):
         filter_by(id=segment_id).first()
 
 
+@db_api.CONTEXT_READER
 def is_vm_provisioned(context, vm_id, host_id, port_id,
                       network_id, tenant_id):
     """Checks if a VM is already known to EOS
@@ -219,6 +226,7 @@ def is_vm_provisioned(context, vm_id, host_id, port_id,
                   host_id=host_id).exists()).scalar()
 
 
+@db_api.CONTEXT_READER
 def is_port_provisioned(context, port_id, host_id=None):
     """Checks if a port is already known to EOS
 
@@ -240,6 +248,7 @@ def is_port_provisioned(context, port_id, host_id=None):
         filter_by(**filters).exists()).scalar()
 
 
+@db_api.CONTEXT_READER
 def is_network_provisioned(context,
                            project_id, network_id, segmentation_id=None,
                            segment_id=None):
@@ -264,6 +273,7 @@ def is_network_provisioned(context,
         filter_by(**filters).exists()).scalar()
 
 
+@db_api.CONTEXT_READER
 def is_tenant_provisioned(context, project_id):
     """Checks if a tenant is already known to EOS
 
@@ -277,6 +287,7 @@ def is_tenant_provisioned(context, project_id):
         filter_by(project_id=project_id).exists()).scalar()
 
 
+@db_api.CONTEXT_READER
 def num_nets_provisioned(context, project_id):
     """Returns number of networks for a given tennat.
 
@@ -286,6 +297,7 @@ def num_nets_provisioned(context, project_id):
         filter_by(project_id=project_id).count()
 
 
+@db_api.CONTEXT_READER
 def num_vms_provisioned(context, project_id):
     """Returns number of VMs for a given tennat.
 
@@ -295,6 +307,7 @@ def num_vms_provisioned(context, project_id):
         filter_by(project_id=project_id).count()
 
 
+@db_api.CONTEXT_READER
 def get_networks(context, project_id):
     """Returns all networks for a given tenant in EOS-compatible format.
 
@@ -320,6 +333,7 @@ def get_networks(context, project_id):
     return res
 
 
+@db_api.CONTEXT_READER
 def get_vms(context, project_id):
     """Returns all VMs for a given tenant in EOS-compatible format.
 
@@ -356,6 +370,7 @@ def get_vms(context, project_id):
     return vm_dict
 
 
+@db_api.CONTEXT_READER
 def are_ports_attached_to_network(context, net_id):
     """Returns all records associated with network in EOS-compatible format.
 
@@ -367,6 +382,7 @@ def are_ports_attached_to_network(context, net_id):
         query(model).filter(model.network_id == net_id).exists()).scalar()
 
 
+@db_api.CONTEXT_READER
 def get_ports(context, project_id=None):
     """Returns all ports of VMs in EOS-compatible format.
 
@@ -397,6 +413,7 @@ def get_ports(context, project_id=None):
     return ports
 
 
+@db_api.CONTEXT_READER
 def get_tenants(context):
     """Returns list of all tenants in EOS-compatible format."""
     session = context.session
@@ -417,6 +434,7 @@ def _make_port_dict(record):
             'profile': record.profile}
 
 
+@db_api.CONTEXT_READER
 def get_all_baremetal_ports(context):
     """Returns a list of all ports that belong to baremetal hosts."""
     session = context.session
@@ -427,6 +445,7 @@ def get_all_baremetal_ports(context):
             for bm_port in bm_ports}
 
 
+@db_api.CONTEXT_READER
 def get_bm_ports_for_device(context, device_id):
     """Get baremetal ports for a device"""
     session = context.session
@@ -443,6 +462,7 @@ def get_bm_ports_for_device(context, device_id):
     return query.all()
 
 
+@db_api.CONTEXT_READER
 def get_all_portbindings(context):
     """Returns a list of all ports bindings."""
     session = context.session
@@ -451,6 +471,7 @@ def get_all_portbindings(context):
             for port in ports}
 
 
+@db_api.CONTEXT_READER
 def get_port_binding_level(context, filters):
     """Returns entries from PortBindingLevel based on the specified filters."""
     return context.session.query(ml2_models.PortBindingLevel). \
@@ -459,6 +480,7 @@ def get_port_binding_level(context, filters):
         all()
 
 
+@db_api.CONTEXT_READER
 def get_network_segments_by_port_id(context, port_id):
     session = context.session
     segments = (session.query(segments_model.NetworkSegment,
@@ -471,6 +493,7 @@ def get_network_segments_by_port_id(context, port_id):
 
 
 @db_api.retry_if_session_inactive()
+@db_api.CONTEXT_READER
 def select_ips_for_remote_group(context, remote_group_ids):
     """Find all ips for a remote group - copied from neutron
 

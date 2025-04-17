@@ -21,6 +21,7 @@ from oslo_config import cfg
 from oslo_log import log as logging
 import six
 
+from neutron_lib import context as nl_context
 from neutron_lib.db import api as db_api
 from neutron.db.models.plugins.ml2.vlanallocation import VlanAllocation
 
@@ -56,9 +57,9 @@ class AristaRPCWrapperBase(object):
         # following builds a mapping of peer name to physnet name for use
         # during port binding
         self.mlag_pairs = {}
-        db_session = db_api.get_reader_session()
-        with db_session.begin():
-            physnets = db_session.query(
+        ctx = nl_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            physnets = ctx.session.query(
                 VlanAllocation.physical_network).distinct().all()
         for (physnet,) in physnets:
             if '_' in physnet:

@@ -1033,28 +1033,28 @@ class AristaDriver(api.MechanismDriver):
             self.timer = None
 
     @db_api.retry_db_errors
+    @db_api.CONTEXT_WRITER
     def _cleanup_db(self, context):
         """Clean up any unnecessary entries in our DB."""
         session = context.session
-        with session.begin(subtransactions=True):
-            arista_vms = db.AristaProvisionedVms
-            arista_nets = db.AristaProvisionedNets
+        arista_vms = db.AristaProvisionedVms
+        arista_nets = db.AristaProvisionedNets
 
-            # DELETE FROM arista_provisioned_vms
-            # WHERE arista_provisioned_vms.port_id NOT IN (
-            #     SELECT ports.id FROM ports)
-            all_ports = session.query(models_v2.Port.id)
-            session.query(arista_vms). \
-                filter(arista_vms.port_id.notin_(all_ports.subquery())). \
-                delete(synchronize_session=False)
+        # DELETE FROM arista_provisioned_vms
+        # WHERE arista_provisioned_vms.port_id NOT IN (
+        #     SELECT ports.id FROM ports)
+        all_ports = session.query(models_v2.Port.id)
+        session.query(arista_vms). \
+            filter(arista_vms.port_id.notin_(all_ports.subquery())). \
+            delete(synchronize_session=False)
 
-            # DELETE FROM arista_provisioned_nets
-            # WHERE arista_provisioned_nets.network_id NOT IN (
-            #     SELECT networks.id FROM networks)
-            all_networks = session.query(models_v2.Network.id)
-            session.query(arista_nets). \
-                filter(arista_nets.network_id.notin_(all_networks.subquery())). \
-                delete(synchronize_session=False)
+        # DELETE FROM arista_provisioned_nets
+        # WHERE arista_provisioned_nets.network_id NOT IN (
+        #     SELECT networks.id FROM networks)
+        all_networks = session.query(models_v2.Network.id)
+        session.query(arista_nets). \
+            filter(arista_nets.network_id.notin_(all_networks.subquery())). \
+            delete(synchronize_session=False)
 
     def _network_provisioned(self, context, tenant_id, network_id,
                              segmentation_id=None, segment_id=None):
@@ -1168,7 +1168,7 @@ def cli():
                                             lazy='subquery')
 
     items = defaultdict(list)
-    with context.session.begin():
+    with db_api.CONTEXT_WRITER.using(context):
         session = context.session
         ports = session.query(Port). \
             join(Port.port_binding). \

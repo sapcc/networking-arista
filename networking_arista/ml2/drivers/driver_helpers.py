@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron_lib import context as nl_context
 from neutron_lib.db import api as db_api
 from neutron.plugins.ml2.drivers import type_vlan
 from oslo_log import log
@@ -117,19 +118,19 @@ class VlanSyncService(object):
 
         self._force_sync = False
 
-        session = db_api.get_writer_session()
-        with session.begin(subtransactions=True):
-            allocs = (session.query(type_vlan.VlanAllocation).with_lockmode(
+        ctx = nl_context.get_admin_context()
+        with db_api.CONTEXT_WRITER.using(ctx):
+            allocs = (ctx.session.query(type_vlan.VlanAllocation).with_lockmode(
                 'update'))
 
             for alloc in allocs:
                 if alloc.physical_network != 'default':
-                    session.delete(alloc)
+                    ctx.session.delete(alloc)
 
                 try:
                     assigned_vlans.remove(alloc.vlan_id)
                 except KeyError:
-                    session.delete(alloc)
+                    ctx.session.delete(alloc)
                     continue
 
                 if alloc.allocated and alloc.vlan_id in available_vlans:
@@ -142,4 +143,4 @@ class VlanSyncService(object):
                 alloc = type_vlan.VlanAllocation(physical_network='default',
                                                  vlan_id=vlan_id,
                                                  allocated=allocated)
-                session.add(alloc)
+                ctx.session.add(alloc)

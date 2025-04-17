@@ -13,12 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import itertools
 import json
 import socket
 
 import mock
-import neutron_lib.db.api as db
+import neutron_lib.db.api as db_api
 
 from mock import patch
 from neutron.tests import base
@@ -1784,14 +1783,14 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
         context = get_admin_context()
         # Create some networks in neutron db
         n1_context = self._get_network_context('t1', 'n1', 10)
-        with n1_context.session.begin():
-            ndb.create_network(n1_context, {'network': n1_context.current})
+        with db_api.CONTEXT_WRITER.using(context):
+            ndb.create_network(context, {'network': n1_context.current})
         n2_context = self._get_network_context('t2', 'n2', 20)
-        with n2_context.session.begin():
-            ndb.create_network(n2_context, {'network': n2_context.current})
+        with db_api.CONTEXT_WRITER.using(context):
+            ndb.create_network(context, {'network': n2_context.current})
         n3_context = self._get_network_context('', 'ha-network', 100)
-        with n3_context.session.begin():
-            ndb.create_network(n3_context, {'network': n3_context.current})
+        with db_api.CONTEXT_WRITER.using(context):
+            ndb.create_network(context, {'network': n3_context.current})
 
         # Create some networks in Arista db
         db_lib.remember_network_segment(context, 't1', 'n1', 10,
@@ -1807,14 +1806,14 @@ class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
 
         # Create some ports in neutron db
         p1_context = self._get_port_context('p1', 't1', 'n1', 'vm1', n1_context, context=context)
-        with n1_context.session.begin():
-            ndb.create_port(n1_context, {'port': p1_context.current})
+        with db_api.CONTEXT_WRITER.using(context):
+            ndb.create_port(context, {'port': p1_context.current})
         p2_context = self._get_port_context('p2', 't2', 'n2', 'vm2', n2_context, context=context)
-        with n2_context.session.begin():
-            ndb.create_port(n2_context, {'port': p2_context.current})
+        with db_api.CONTEXT_WRITER.using(context):
+            ndb.create_port(context, {'port': p2_context.current})
         p3_context = self._get_port_context('p3', 't3', 'ha-network', 'vm3', n3_context, context=context)
-        with n3_context.session.begin():
-            ndb.create_port(n3_context, {'port': p3_context.current})
+        with db_api.CONTEXT_WRITER.using(context):
+            ndb.create_port(context, {'port': p3_context.current})
 
         # Create some vms in Arista db
         db_lib.remember_vm(context, 'vm1', 'h1', 'p1', 'n1', 't1')
@@ -1882,7 +1881,6 @@ class FakeNetworkContext(object):
         self._segments = segments
         self.is_admin = False
         self.tenant_id = network['tenant_id']
-        self.session = db.get_writer_session()
         self._plugin_context = FakePluginContext(
             self.tenant_id) if context is None else context
 

@@ -246,7 +246,7 @@ def optimize_security_group_rules(rules):
 
             net = constants.ANY_NET[ethertype]
             # Net-ranges covering any ip
-            for orule in [i.data for i in ip_tree.search(net.first)
+            for orule in [i.data for i in ip_tree.at(net.first)
                           if i.data['remote_ip_prefix'] == net]:
                 merged = _try_merge_rules(orule, rule)
                 if merged:
@@ -267,7 +267,7 @@ def optimize_security_group_rules(rules):
             while True:
                 # We will break the loop, when we do not find any rule to merge
                 # The else case will add then the rule
-                for orule in ip_tree.search(begin, end):
+                for orule in ip_tree.overlap(begin, end):
                     ip_tree.remove(orule)
                     merged = _try_merge_rules(orule.data, rule)
                     if merged:

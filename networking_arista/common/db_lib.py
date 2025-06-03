@@ -549,24 +549,29 @@ class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,
     def __init__(self):
         pass
 
+    @db_api.CONTEXT_READER
     def get_all_networks_for_tenant(self, context, project_id):
         filters = {'project_id': [project_id]}
         return super(NeutronNets,
                      self).get_networks(context, filters=filters) or []
 
+    @db_api.CONTEXT_READER
     def get_all_networks(self, context, fields=None):
         return super(NeutronNets, self).get_networks(context,
                                                      fields=fields) or []
 
+    @db_api.CONTEXT_READER
     def get_all_ports(self, context, filters=None):
         return super(NeutronNets, self).get_ports(context,
                                                   filters=filters) or []
 
+    @db_api.CONTEXT_READER
     def get_all_ports_for_tenant(self, context, project_id):
         filters = {'project_id': [project_id]}
         return super(NeutronNets,
                      self).get_ports(context, filters=filters) or []
 
+    @db_api.CONTEXT_READER
     def get_shared_network_owner_id(self, context, network_id):
         filters = {'id': [network_id]}
         nets = self.get_networks(filters=filters, context=context) or []
@@ -578,6 +583,7 @@ class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,
                 segments[0][api.NETWORK_TYPE] == p_const.TYPE_VLAN):
             return nets[0]['project_id']
 
+    @db_api.CONTEXT_READER
     def get_network_segments(self, context, network_id, dynamic=False):
         segments = segments_db.get_network_segments(context, network_id,
                                                     filter_dynamic=dynamic)
@@ -586,38 +592,46 @@ class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2,
                 segment['is_dynamic'] = True
         return segments
 
+    @db_api.CONTEXT_READER
     def get_all_network_segments(self, context, network_id):
         segments = self.get_network_segments(context, network_id)
         segments += self.get_network_segments(context, network_id,
                                               dynamic=True)
         return segments
 
+    @db_api.CONTEXT_READER
     def get_segment_by_id(self, context, segment_id):
         return segments_db.get_segment_by_id(context,
                                              segment_id)
 
+    @db_api.CONTEXT_READER
     def get_network_from_net_id(self, context, network_id):
         filters = {'id': [network_id]}
         return super(NeutronNets,
                      self).get_networks(context,
                                         filters=filters) or []
 
+    @db_api.CONTEXT_READER
     def get_subnet_info(self, context, subnet_id):
         return self.get_subnet(context, subnet_id)
 
+    @db_api.CONTEXT_READER
     def get_subnet(self, context, subnet_id):
         return super(NeutronNets, self). \
                    get_subnet(context, subnet_id) or {}
 
+    @db_api.CONTEXT_READER
     def get_all_security_gp_to_port_bindings(self, context, filters=None):
         return super(NeutronNets, self)._get_port_security_group_bindings(
             context, filters=filters) or []
 
+    @db_api.CONTEXT_READER
     def get_security_gp_to_port_bindings(self, context, sec_gp_id):
         filters = {'security_group_id': [sec_gp_id]}
         return super(NeutronNets, self)._get_port_security_group_bindings(
             context, filters=filters) or []
 
+    @db_api.CONTEXT_READER
     def get_security_groups(self, context, filters=None):
         sgs = super(NeutronNets,
                     self).get_security_groups(context, filters=filters) or []
